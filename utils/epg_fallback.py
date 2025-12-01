@@ -26,7 +26,7 @@ class EPGFallbackManager:
         self.fallback_sources = {
             'epgshare01': {
                 'plex': 'https://epgshare01.online/epgshare01/epg_ripper_PLEX1.xml.gz',
-                'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US1.xml.gz',
+                'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
                 'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
             },
             'mjh': {
@@ -34,6 +34,7 @@ class EPGFallbackManager:
                 'plex': 'https://i.mjh.nz/Plex/all.xml.gz',
                 'samsung': 'https://i.mjh.nz/SamsungTVPlus/all.xml.gz',
                 'distrotv': 'https://i.mjh.nz/DStv/za.xml.gz',
+                'stirr': 'https://i.mjh.nz/Stirr/all.xml.gz', 
             },
             'buddychewchew': {
                 'tubi': 'https://raw.githubusercontent.com/BuddyChewChew/tubi-scraper/main/tubi_epg.xml',
@@ -45,6 +46,7 @@ class EPGFallbackManager:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        self.session.max_redirects = 5
     
     def get_fallback_epg(self, provider_name: str, channels: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         """Get EPG from fallback sources"""
@@ -80,14 +82,19 @@ class EPGFallbackManager:
         url = self.fallback_sources[source_name][provider_name]
         
         try:
-            response = self.session.get(url, timeout=(10, 30))
+            response = self.session.get(url, timeout=(10, 60), allow_redirects=True)
             response.raise_for_status()
             
-            # Handle compression
-            if url.endswith('.gz'):
-                xml_content = gzip.decompress(response.content).decode('utf-8')
+            # Handle compression - check content or URL
+            content = response.content
+            if url.endswith('.gz') or response.headers.get('Content-Encoding') == 'gzip':
+                try:
+                    xml_content = gzip.decompress(content).decode('utf-8')
+                except gzip.BadGzipFile:
+                    # Not actually gzipped despite extension
+                    xml_content = content.decode('utf-8')
             else:
-                xml_content = response.text
+                xml_content = content.decode('utf-8')
             
             epg_data = self._parse_xmltv(xml_content, provider_name)
             
@@ -144,6 +151,14 @@ class EPGFallbackManager:
         if provider_name == 'pluto':
             return f"pluto-{external_id}" if not external_id.startswith('pluto-') else external_id
         elif provider_name == 'plex':
+            # mjh.nz uses format: lineupId-channelId (e.g., 5e20b730f2f8d5003d739db7-61e805952502a7a6fa84d70f)
+            # Our provider uses: plex-channelId (e.g., plex-61e805952502a7a6fa84d70f)
+            if '-' in external_id and not external_id.startswith('plex-'):
+                # Extract the channel part (after the first dash)
+                parts = external_id.split('-', 1)
+                if len(parts) == 2:
+                    channel_part = parts[1]
+                    return f"plex-{channel_part}"
             return f"plex-{external_id}" if not external_id.startswith('plex-') else external_id
         elif provider_name == 'tubi':
             return f"tubi-{external_id}" if not external_id.startswith('tubi-') else external_id
@@ -155,5 +170,7 @@ class EPGFallbackManager:
             return f"distrotv-{external_id}" if not external_id.startswith('distrotv-') else external_id
         elif provider_name == 'lg':
             return f"lg-{external_id}" if not external_id.startswith('lg-') else external_id
+        elif provider_name == 'stirr':
+            return f"stirr-{external_id}" if not external_id.startswith('stirr-') else external_id
         
         return external_id

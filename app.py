@@ -200,6 +200,13 @@ class UnifiedStreamingAggregator:
             logger.info("Successfully imported GitIptvProvider and GitFreetvProvider")
         except Exception as e:
             logger.error(f"Failed to import git providers: {e}")
+
+        try:
+            from providers.stirr_provider import StirrProvider
+            available_providers['stirr'] = StirrProvider
+            logger.info("Successfully imported StirrProvider")
+        except Exception as e:
+            logger.error(f"Failed to import StirrProvider: {e}")
         
         # Initialize providers
         for name, provider_class in available_providers.items():
