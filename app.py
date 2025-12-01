@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET
 
 # Import logging configuration FIRST
 from utils.logging_config import setup_logging, get_logger
+from utils.epg_aggregator import get_epg_aggregator
 
 monkey.patch_all()
 
@@ -229,6 +230,13 @@ class UnifiedStreamingAggregator:
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
         self.app.route('/refresh')(self.force_refresh)
+        
+        # EPG Aggregator routes (combined external EPG sources)
+        self.app.route('/epg/combined')(self.get_epg_combined)
+        self.app.route('/epg/combined.xml')(self.get_epg_combined)
+        self.app.route('/epg/combined.xml.gz')(self.get_epg_combined_gz)
+        self.app.route('/epg/sources')(self.get_epg_sources)
+        self.app.route('/epg/refresh', methods=['POST', 'GET'])(self.refresh_epg_aggregator)
         
     def _start_background_refresh(self):
         """Start background thread to keep cache warm"""
@@ -687,8 +695,11 @@ class UnifiedStreamingAggregator:
                 <h3>Endpoints:</h3>
                 <ul>
                     <li><a href="/playlist">M3U Playlist</a></li>
-                    <li><a href="/epg">EPG XML</a></li>
-                    <li><a href="/epggz">EPG XML (Compressed)</a></li>
+                    <li><a href="/epg">EPG XML (from providers)</a></li>
+                    <li><a href="/epggz">EPG XML Compressed (from providers)</a></li>
+                    <li><a href="/epg/combined">EPG Combined (mjh.nz + external sources)</a></li>
+                    <li><a href="/epg/combined.xml.gz">EPG Combined Compressed</a></li>
+                    <li><a href="/epg/sources">EPG Sources List</a></li>
                     <li><a href="/channels">Channels JSON</a></li>
                     <li><a href="/debug">Debug Info (JSON)</a></li>
                     <li><a href="/refresh">Force Refresh</a></li>
@@ -748,6 +759,93 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Error forcing refresh: {e}")
             return Response(f"Error forcing refresh: {e}", status=500)
+
+    def get_epg_combined(self):
+        """Serve combined EPG from all external sources (mjh.nz, etc.)"""
+        try:
+            aggregator = get_epg_aggregator()
+            
+            # Check if client accepts gzip
+            accept_encoding = request.headers.get('Accept-Encoding', '')
+            
+            if 'gzip' in accept_encoding:
+                content = aggregator.get_combined_epg_gzipped()
+                return Response(
+                    content,
+                    mimetype='application/xml',
+                    headers={
+                        'Content-Encoding': 'gzip',
+                        'Cache-Control': 'public, max-age=3600'
+                    }
+                )
+            else:
+                content = aggregator.get_combined_epg()
+                return Response(
+                    content,
+                    mimetype='application/xml; charset=utf-8',
+                    headers={'Cache-Control': 'public, max-age=3600'}
+                )
+        except Exception as e:
+            logger.error(f"Error generating combined EPG: {e}")
+            return Response(f"Error generating combined EPG: {e}", status=500)
+    
+    def get_epg_combined_gz(self):
+        """Serve combined EPG as gzipped file download"""
+        try:
+            aggregator = get_epg_aggregator()
+            content = aggregator.get_combined_epg_gzipped()
+            
+            return Response(
+                content,
+                mimetype='application/gzip',
+                headers={
+                    'Content-Disposition': 'attachment; filename="epg-combined.xml.gz"',
+                    'Cache-Control': 'public, max-age=3600'
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error generating combined EPG gzip: {e}")
+            return Response(f"Error generating combined EPG gzip: {e}", status=500)
+    
+    def get_epg_sources(self):
+        """List available and enabled EPG sources"""
+        try:
+            aggregator = get_epg_aggregator()
+            
+            return Response(
+                json.dumps({
+                    'available': aggregator.get_available_sources(),
+                    'enabled': aggregator.get_enabled_sources()
+                }, indent=2),
+                mimetype='application/json'
+            )
+        except Exception as e:
+            logger.error(f"Error getting EPG sources: {e}")
+            return Response(f"Error getting EPG sources: {e}", status=500)
+    
+    def refresh_epg_aggregator(self):
+        """Force refresh the EPG aggregator cache"""
+        try:
+            aggregator = get_epg_aggregator()
+            aggregator.clear_cache()
+            
+            # Optionally trigger immediate refresh
+            fetch_now = request.args.get('fetch', 'false').lower() == 'true'
+            
+            if fetch_now:
+                aggregator.get_combined_epg(force_refresh=True)
+                return Response(
+                    json.dumps({'status': 'refreshed', 'message': 'EPG aggregator cache refreshed and rebuilt'}),
+                    mimetype='application/json'
+                )
+            
+            return Response(
+                json.dumps({'status': 'cleared', 'message': 'EPG aggregator cache cleared, will rebuild on next request'}),
+                mimetype='application/json'
+            )
+        except Exception as e:
+            logger.error(f"Error refreshing EPG aggregator: {e}")
+            return Response(f"Error refreshing EPG aggregator: {e}", status=500)
 
         
     def run(self):
