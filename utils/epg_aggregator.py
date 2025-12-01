@@ -1,224 +1,178 @@
 """
-EPG Aggregator - Fetches and combines EPG sources into a single XMLTV file
+EPG Aggregator - Downloads and combines EPG sources into single XMLTV
 """
 
 import requests
 import gzip
-import xml.etree.ElementTree as ET
 import time
 import threading
 import logging
-from typing import Dict, List, Optional, Set
-from io import BytesIO
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 
 class EPGAggregator:
-    """Aggregates EPG data from multiple external sources into a single XMLTV"""
+    """Downloads and combines external EPG sources into single XMLTV"""
     
     def __init__(self):
         self.cache = None
+        self.cache_gz = None
         self.cache_expiry = 0
         self.cache_lock = threading.Lock()
         self.cache_duration = 3600  # 1 hour
         
-        # All available EPG sources
+        # EPG sources to fetch and combine
         self.epg_sources = {
-            # mjh.nz sources
             'plex': 'https://i.mjh.nz/Plex/all.xml',
             'pluto': 'https://i.mjh.nz/PlutoTV/all.xml',
             'samsung': 'https://i.mjh.nz/SamsungTVPlus/all.xml',
             'stirr': 'https://i.mjh.nz/Stirr/all.xml',
-            
-            # Additional sources
-            'tubi': 'https://raw.githubusercontent.com/BuddyChewChew/tubi-scraper/main/tubi_epg.xml',
-            'xumo': 'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml',
-            
-            # epgshare01 sources (gzipped)
-            'plex_epgshare': 'https://epgshare01.online/epgshare01/epg_ripper_PLEX1.xml.gz',
-            'distrotv_epgshare': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
+            'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
+            'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
+            'tubi': 'https://github.com/BuddyChewChew/tubi-scraper/raw/refs/heads/main/tubi_epg.xml',
+            'xumo': 'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
         }
-        
-        # Sources to use by default (can be configured)
-        self.enabled_sources = [
-            'plex', 'pluto', 'samsung', 'stirr', 'tubi', 'xumo'
-        ]
         
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/xml, text/xml, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*',
         })
-        self.session.max_redirects = 5
+    
+    def _fetch_source(self, name: str, url: str) -> str:
+        """Fetch single EPG source, return raw XML content"""
+        try:
+            response = self.session.get(url, timeout=(10, 120))
+            response.raise_for_status()
+            
+            content = response.content
+            
+            # Decompress if gzipped
+            if url.endswith('.gz'):
+                try:
+                    content = gzip.decompress(content)
+                except:
+                    pass
+            
+            xml_text = content.decode('utf-8')
+            logger.info(f"Fetched EPG: {name} ({len(xml_text)} bytes)")
+            return xml_text
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch EPG {name}: {e}")
+            return ""
+    
+    def _extract_content(self, xml_text: str) -> tuple:
+        """Extract channels and programmes from XMLTV, return as raw strings"""
+        channels = []
+        programmes = []
+        
+        try:
+            import re
+            
+            channel_pattern = re.compile(r'<channel\s[^>]*>.*?</channel>', re.DOTALL)
+            programme_pattern = re.compile(r'<programme\s[^>]*>.*?</programme>', re.DOTALL)
+            
+            channels = channel_pattern.findall(xml_text)
+            programmes = programme_pattern.findall(xml_text)
+            
+        except Exception as e:
+            logger.error(f"Error extracting content: {e}")
+        
+        return channels, programmes
     
     def get_combined_epg(self, force_refresh: bool = False) -> str:
         """Get combined EPG XML from all sources"""
+        
         with self.cache_lock:
             if not force_refresh and self.cache and time.time() < self.cache_expiry:
-                logger.debug("Returning cached combined EPG")
+                logger.debug("Returning cached EPG")
                 return self.cache
         
-        logger.info("Building combined EPG from all sources...")
+        logger.info("Building combined EPG...")
         start_time = time.time()
         
-        # Create root XMLTV element
-        root = ET.Element('tv')
-        root.set('generator-info-name', 'KPTV-FAST EPG Aggregator')
-        root.set('generated-ts', datetime.now(timezone.utc).isoformat())
+        all_channels = []
+        all_programmes = []
+        seen_channel_ids = set()
         
-        channels_added: Set[str] = set()
-        programmes_count = 0
-        successful_sources = []
-        failed_sources = []
-        
-        # Fetch each source in parallel
-        import concurrent.futures
-        
-        def fetch_source(source_name: str) -> tuple:
-            """Fetch and parse a single EPG source"""
-            url = self.epg_sources.get(source_name)
-            if not url:
-                return source_name, None, None, f"Unknown source: {source_name}"
+        # Fetch all sources
+        for name, url in self.epg_sources.items():
+            xml_text = self._fetch_source(name, url)
+            if not xml_text:
+                continue
             
-            try:
-                response = self.session.get(url, timeout=(10, 120), allow_redirects=True)
-                response.raise_for_status()
-                
-                content = response.content
-                
-                # Handle gzipped content
-                if url.endswith('.gz') or response.headers.get('Content-Encoding') == 'gzip':
-                    try:
-                        content = gzip.decompress(content)
-                    except gzip.BadGzipFile:
-                        pass  # Not actually gzipped
-                
-                xml_content = content.decode('utf-8')
-                
-                # Parse XML
-                source_root = ET.fromstring(xml_content)
-                
-                channels = source_root.findall('channel')
-                programmes = source_root.findall('programme')
-                
-                return source_name, channels, programmes, None
-                
-            except requests.Timeout:
-                return source_name, None, None, "Timeout"
-            except requests.RequestException as e:
-                return source_name, None, None, f"Request error: {e}"
-            except ET.ParseError as e:
-                return source_name, None, None, f"XML parse error: {e}"
-            except Exception as e:
-                return source_name, None, None, f"Error: {e}"
-        
-        # Fetch all sources concurrently
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-            futures = {
-                executor.submit(fetch_source, source): source 
-                for source in self.enabled_sources
-            }
+            channels, programmes = self._extract_content(xml_text)
             
-            for future in concurrent.futures.as_completed(futures):
-                source_name, channels, programmes, error = future.result()
-                
-                if error:
-                    logger.warning(f"EPG source {source_name} failed: {error}")
-                    failed_sources.append(source_name)
-                    continue
-                
-                if channels is None or programmes is None:
-                    failed_sources.append(source_name)
-                    continue
-                
-                # Add channels (avoiding duplicates by channel id)
-                channels_from_source = 0
-                for channel in channels:
-                    channel_id = channel.get('id')
-                    if channel_id and channel_id not in channels_added:
-                        root.append(channel)
-                        channels_added.add(channel_id)
-                        channels_from_source += 1
-                
-                # Add all programmes
-                programmes_from_source = 0
-                for programme in programmes:
-                    root.append(programme)
-                    programmes_from_source += 1
-                
-                programmes_count += programmes_from_source
-                successful_sources.append(source_name)
-                
-                logger.info(f"EPG source {source_name}: {channels_from_source} channels, {programmes_from_source} programmes")
+            # Add channels (dedupe by id)
+            import re
+            for ch in channels:
+                id_match = re.search(r'id="([^"]+)"', ch)
+                if id_match:
+                    ch_id = id_match.group(1)
+                    if ch_id not in seen_channel_ids:
+                        seen_channel_ids.add(ch_id)
+                        all_channels.append(ch)
+            
+            # Add all programmes
+            all_programmes.extend(programmes)
+            
+            logger.info(f"  {name}: {len(channels)} channels, {len(programmes)} programmes")
         
-        # Generate XML string
-        xml_declaration = '<?xml version="1.0" encoding="UTF-8"?>\n'
-        xml_doctype = '<!DOCTYPE tv SYSTEM "xmltv.dtd">\n'
-        xml_content = ET.tostring(root, encoding='unicode')
+        # Build combined XML
+        xml_parts = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<!DOCTYPE tv SYSTEM "xmltv.dtd">',
+            f'<tv generator-info-name="KPTV-FAST" generated-ts="{datetime.now(timezone.utc).isoformat()}">',
+        ]
         
-        combined_xml = xml_declaration + xml_doctype + xml_content
+        xml_parts.extend(all_channels)
+        xml_parts.extend(all_programmes)
+        xml_parts.append('</tv>')
+        
+        combined_xml = '\n'.join(xml_parts)
         
         elapsed = time.time() - start_time
-        logger.info(f"Combined EPG built: {len(channels_added)} channels, {programmes_count} programmes from {len(successful_sources)} sources in {elapsed:.1f}s")
+        logger.info(f"Combined EPG: {len(all_channels)} channels, {len(all_programmes)} programmes in {elapsed:.1f}s")
         
-        if failed_sources:
-            logger.warning(f"Failed EPG sources: {', '.join(failed_sources)}")
-        
-        # Cache the result
+        # Cache results
         with self.cache_lock:
             self.cache = combined_xml
+            self.cache_gz = gzip.compress(combined_xml.encode('utf-8'))
             self.cache_expiry = time.time() + self.cache_duration
         
         return combined_xml
     
     def get_combined_epg_gzipped(self, force_refresh: bool = False) -> bytes:
         """Get combined EPG as gzipped bytes"""
-        xml_content = self.get_combined_epg(force_refresh)
-        return gzip.compress(xml_content.encode('utf-8'))
-    
-    def set_enabled_sources(self, sources: List[str]):
-        """Set which EPG sources to use"""
-        valid_sources = [s for s in sources if s in self.epg_sources]
-        if valid_sources:
-            self.enabled_sources = valid_sources
-            # Invalidate cache
-            with self.cache_lock:
-                self.cache = None
-                self.cache_expiry = 0
-            logger.info(f"EPG sources set to: {', '.join(valid_sources)}")
-    
-    def add_custom_source(self, name: str, url: str):
-        """Add a custom EPG source"""
-        self.epg_sources[name] = url
-        logger.info(f"Added custom EPG source: {name} -> {url}")
-    
-    def get_available_sources(self) -> Dict[str, str]:
-        """Get all available EPG sources"""
-        return self.epg_sources.copy()
-    
-    def get_enabled_sources(self) -> List[str]:
-        """Get currently enabled EPG sources"""
-        return self.enabled_sources.copy()
+        with self.cache_lock:
+            if not force_refresh and self.cache_gz and time.time() < self.cache_expiry:
+                return self.cache_gz
+        
+        self.get_combined_epg(force_refresh)
+        
+        with self.cache_lock:
+            return self.cache_gz
     
     def clear_cache(self):
         """Clear the EPG cache"""
         with self.cache_lock:
             self.cache = None
+            self.cache_gz = None
             self.cache_expiry = 0
         logger.info("EPG cache cleared")
 
 
-# Singleton instance
-_aggregator_instance = None
-_instance_lock = threading.Lock()
+# Singleton
+_instance = None
+_lock = threading.Lock()
 
 
 def get_epg_aggregator() -> EPGAggregator:
-    """Get the singleton EPG aggregator instance"""
-    global _aggregator_instance
-    with _instance_lock:
-        if _aggregator_instance is None:
-            _aggregator_instance = EPGAggregator()
-        return _aggregator_instance
+    """Get singleton EPG aggregator"""
+    global _instance
+    with _lock:
+        if _instance is None:
+            _instance = EPGAggregator()
+        return _instance

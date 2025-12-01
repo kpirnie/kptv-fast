@@ -3,10 +3,13 @@
 Unified Streaming Service Aggregator - Optimized for Speed with Git IPTV Support
 """
 
+# CRITICAL: monkey.patch_all() MUST be called before ANY other imports
+from gevent import monkey # type: ignore
+monkey.patch_all()
+
 import os
 import re
 import json
-import gzip
 import time
 import threading
 import traceback
@@ -14,22 +17,15 @@ import sys
 import concurrent.futures
 from flask import Flask, Response, request
 from gevent.pywsgi import WSGIServer # type: ignore
-from gevent import monkey # type: ignore
-import xml.etree.ElementTree as ET
 
-
-# Import logging configuration FIRST
 from utils.logging_config import setup_logging, get_logger
 from utils.epg_aggregator import get_epg_aggregator
 
-monkey.patch_all()
-
-# Set recursion limit early to prevent issues
 sys.setrecursionlimit(2000)
 
-# Setup logging globally
 DEBUG_MODE = setup_logging()
 logger = get_logger(__name__)
+
 
 class UnifiedStreamingAggregator:
 
@@ -37,28 +33,25 @@ class UnifiedStreamingAggregator:
         self.app = Flask(__name__)
         self.providers = {}
         self.channels_cache = {}
-        self.epg_cache = {}
         self.cache_expiry = {}
         self.cache_lock = threading.Lock()
         
-        # Configuration from environment variables
+        # Configuration
         self.port = int(os.getenv('PORT', 7777))
-        self.cache_duration = int(os.getenv('CACHE_DURATION', 7200))  # 2 hours default (increased)
+        self.cache_duration = int(os.getenv('CACHE_DURATION', 7200))
         self.enabled_providers = os.getenv('ENABLED_PROVIDERS', 'all').split(',')
         
         # Performance settings
-        self.max_workers = int(os.getenv('MAX_WORKERS', 5))  # Concurrent provider fetches
-        self.provider_timeout = int(os.getenv('PROVIDER_TIMEOUT', 45))  # Per-provider timeout
+        self.max_workers = int(os.getenv('MAX_WORKERS', 5))
+        self.provider_timeout = int(os.getenv('PROVIDER_TIMEOUT', 45))
         
-        # Startup cache warming setting
+        # Startup cache warming
         self.warm_cache_on_startup = os.getenv('WARM_CACHE_ON_STARTUP', 'true').lower() == 'true'
-        self.warm_epg_on_startup = os.getenv('WARM_EPG_ON_STARTUP', 'true').lower() == 'true'  # Add this
         self.startup_delay = int(os.getenv('STARTUP_CACHE_DELAY', 10))
 
-        # Debug mode
         self.debug_mode = DEBUG_MODE
         
-        # Filter configuration
+        # Filters
         self.channel_name_include = os.getenv('CHANNEL_NAME_INCLUDE', '')
         self.channel_name_exclude = os.getenv('CHANNEL_NAME_EXCLUDE', '')
         self.group_include = os.getenv('GROUP_INCLUDE', '')
@@ -67,23 +60,17 @@ class UnifiedStreamingAggregator:
         # Git provider configuration
         self.git_country = os.getenv('GIT_COUNTRY', '')
         
-        # Initialize providers
         self._init_providers()
         self._setup_routes()
-        
-        # Start background cache warming
         self._start_background_refresh()
         
-        # Start startup cache warming
         if self.warm_cache_on_startup:
             self._start_startup_cache_warming()
 
-
     def _start_startup_cache_warming(self):
-        """Start cache warming on startup with progress tracking"""
+        """Warm channels cache on startup"""
         def startup_cache_warmer():
             try:
-                # Wait for providers to be ready
                 logger.info("⏳ Waiting for providers to initialize...")
                 max_wait = 60
                 wait_time = 0
@@ -91,8 +78,6 @@ class UnifiedStreamingAggregator:
                 while wait_time < max_wait and len(self.providers) == 0:
                     time.sleep(2)
                     wait_time += 2
-                    if wait_time % 10 == 0:  # Log every 10 seconds
-                        logger.info(f"Still waiting for providers... ({wait_time}s)")
                 
                 if len(self.providers) == 0:
                     logger.warning("❌ No providers available for cache warming")
@@ -100,7 +85,6 @@ class UnifiedStreamingAggregator:
                 
                 logger.info(f"✅ Found {len(self.providers)} providers: {', '.join(self.providers.keys())}")
                 
-                # Additional delay
                 if self.startup_delay > 0:
                     logger.info(f"⏳ Waiting {self.startup_delay}s for full initialization...")
                     time.sleep(self.startup_delay)
@@ -108,27 +92,11 @@ class UnifiedStreamingAggregator:
                 logger.info("🔥 Starting startup cache warming...")
                 start_time = time.time()
                 
-                # Warm channels cache first
                 logger.info("📺 Warming channels cache...")
-                channels_start_time = time.time()
                 all_channels = self._get_all_channels_concurrent()
-                channels_elapsed = time.time() - channels_start_time
-                logger.info(f"✅ Channels cache warmed: {len(all_channels)} channels in {channels_elapsed:.1f}s")
+                elapsed = time.time() - start_time
                 
-                # Warm EPG cache if enabled
-                all_epg_data = {}
-                if self.warm_epg_on_startup:
-                    logger.info("📡 Warming EPG cache...")
-                    epg_start_time = time.time()
-                    all_epg_data = self._get_all_epg_data()
-                    epg_elapsed = time.time() - epg_start_time
-                    logger.info(f"✅ EPG cache warmed: {len(all_epg_data)} channels with EPG in {epg_elapsed:.1f}s")
-                else:
-                    logger.info("⏭️ EPG cache warming disabled (WARM_EPG_ON_STARTUP=false)")
-                
-                total_elapsed = time.time() - start_time
-                logger.info(f"🎉 Startup cache warming completed!")
-                logger.info(f"📊 Total: {len(all_channels)} channels, {len(all_epg_data)} with EPG in {total_elapsed:.2f}s")
+                logger.info(f"✅ Channels cache warmed: {len(all_channels)} channels in {elapsed:.1f}s")
                 logger.info(f"🚀 First requests will now be instant!")
                 
             except Exception as e:
@@ -140,11 +108,9 @@ class UnifiedStreamingAggregator:
         logger.info("🌟 Startup cache warming scheduled")
 
     def _init_providers(self):
-        """Initialize all available providers with better error handling"""
-        # Import providers individually to isolate issues
+        """Initialize all available providers"""
         available_providers = {}
         
-        # Try to import each provider individually
         try:
             from providers.xumo_provider import XumoProvider
             available_providers['xumo'] = XumoProvider
@@ -209,7 +175,6 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Failed to import StirrProvider: {e}")
         
-        # Initialize providers
         for name, provider_class in available_providers.items():
             if self.enabled_providers == ['all'] or name in self.enabled_providers:
                 try:
@@ -218,78 +183,56 @@ class UnifiedStreamingAggregator:
                     logger.info(f"Successfully initialized {name} provider")
                 except Exception as e:
                     logger.error(f"Failed to initialize {name} provider: {e}")
-                    logger.debug(traceback.format_exc())        
+                    logger.debug(traceback.format_exc())
 
     def _setup_routes(self):
         """Setup Flask routes"""
         self.app.route('/playlist')(self.get_playlist)
-        self.app.route('/epg')(self.get_epg_xml)
-        self.app.route('/epggz')(self.get_epg_xml_gz)
+        self.app.route('/epg')(self.get_epg)
         self.app.route('/channels')(self.get_channels_json)
         self.app.route('/status')(self.get_status)
         self.app.route('/clear_cache')(self.clear_cache)
         self.app.route('/debug')(self.get_debug_info)
         self.app.route('/refresh')(self.force_refresh)
-        
-        # EPG Aggregator routes (combined external EPG sources)
-        self.app.route('/epg/combined')(self.get_epg_combined)
-        self.app.route('/epg/combined.xml')(self.get_epg_combined)
-        self.app.route('/epg/combined.xml.gz')(self.get_epg_combined_gz)
-        self.app.route('/epg/sources')(self.get_epg_sources)
-        self.app.route('/epg/refresh', methods=['POST', 'GET'])(self.refresh_epg_aggregator)
-        
+
     def _start_background_refresh(self):
-        """Start background thread to keep cache warm"""
+        """Background thread to keep channels cache warm"""
         def background_refresher():
             while True:
                 try:
-                    # Wait 5 minutes before first refresh
                     time.sleep(300)
                     
-                    # Check if caches are getting old (75% of cache duration)
                     with self.cache_lock:
                         now = time.time()
                         channels_age = now - (self.cache_expiry.get('all_channels', now) - self.cache_duration)
-                        epg_age = now - (self.cache_expiry.get('all_epg', now) - self.cache_duration)
-                        
                         channels_needs_refresh = channels_age > (self.cache_duration * 0.75)
-                        epg_needs_refresh = epg_age > (self.cache_duration * 0.75)
                     
-                    if channels_needs_refresh or epg_needs_refresh:
+                    if channels_needs_refresh:
                         logger.info("🔄 Background refresh starting...")
                         start_time = time.time()
-                        
-                        if channels_needs_refresh:
-                            logger.info("📺 Refreshing channels cache...")
-                            self._get_all_channels_concurrent()
-                        
-                        if epg_needs_refresh:
-                            logger.info("📡 Refreshing EPG cache...")
-                            self._get_all_epg_data()
-                        
+                        self._get_all_channels_concurrent()
                         elapsed = time.time() - start_time
                         logger.info(f"✅ Background refresh completed in {elapsed:.1f}s")
                     
                 except Exception as e:
                     logger.error(f"Background refresh error: {e}")
                 
-                # Check every 15 minutes
                 time.sleep(900)
         
         refresh_thread = threading.Thread(target=background_refresher, daemon=True)
         refresh_thread.start()
         logger.info("🔄 Background refresh thread started")
-        
+
     def _is_cache_valid(self, cache_key):
         """Check if cache is still valid"""
         return (cache_key in self.cache_expiry and 
                 time.time() < self.cache_expiry[cache_key])
-    
+
     def _apply_filters(self, channels):
         """Apply regex filters to channels"""
         if not any([self.channel_name_include, self.channel_name_exclude, 
                    self.group_include, self.group_exclude]):
-            return channels  # No filters to apply
+            return channels
             
         filtered_channels = []
         
@@ -297,13 +240,10 @@ class UnifiedStreamingAggregator:
             name = channel.get('name', '')
             group = channel.get('group', '')
             
-            # Apply name filters
             if self.channel_name_include and not re.search(self.channel_name_include, name, re.IGNORECASE):
                 continue
             if self.channel_name_exclude and re.search(self.channel_name_exclude, name, re.IGNORECASE):
                 continue
-                
-            # Apply group filters  
             if self.group_include and not re.search(self.group_include, group, re.IGNORECASE):
                 continue
             if self.group_exclude and re.search(self.group_exclude, group, re.IGNORECASE):
@@ -312,34 +252,32 @@ class UnifiedStreamingAggregator:
             filtered_channels.append(channel)
             
         return filtered_channels
-    
+
     def _remove_duplicates(self, channels):
         """Remove duplicate channels based on name and stream URL"""
         seen = set()
         unique_channels = []
         
         for channel in channels:
-            # Create a key based on normalized name and stream URL
             key = (
                 channel.get('name', '').lower().strip(),
                 channel.get('stream_url', '')
             )
             
-            if key not in seen and key[0] and key[1]:  # Ensure name and URL exist
+            if key not in seen and key[0] and key[1]:
                 seen.add(key)
                 unique_channels.append(channel)
                 
         logger.info(f"Removed {len(channels) - len(unique_channels)} duplicate channels")
         return unique_channels
-    
+
     def _fetch_provider_channels(self, provider_name, provider):
-        """Fetch channels from a single provider with timeout"""
+        """Fetch channels from a single provider"""
         try:
             if self.debug_mode:
                 logger.debug(f"Fetching channels from {provider_name}")
             start_time = time.time()
             
-            # Use a more robust timeout mechanism
             import signal
             
             def timeout_handler(signum, frame):
@@ -348,15 +286,14 @@ class UnifiedStreamingAggregator:
             provider_channels = []
             
             try:
-                # Set up timeout for the whole operation
-                if hasattr(signal, 'SIGALRM'):  # Unix systems
+                if hasattr(signal, 'SIGALRM'):
                     signal.signal(signal.SIGALRM, timeout_handler)
                     signal.alarm(self.provider_timeout)
                 
                 provider_channels = provider.get_channels()
                 
                 if hasattr(signal, 'SIGALRM'):
-                    signal.alarm(0)  # Cancel the alarm
+                    signal.alarm(0)
                     
             except TimeoutError:
                 logger.warning(f"⏰ {provider_name} timed out after {self.provider_timeout}s")
@@ -370,10 +307,7 @@ class UnifiedStreamingAggregator:
             elapsed = time.time() - start_time
             
             if provider_channels:
-                if self.debug_mode:
-                    logger.debug(f"✅ {provider_name}: {len(provider_channels)} channels in {elapsed:.1f}s")
-                else:
-                    logger.info(f"✅ {provider_name}: {len(provider_channels)} channels")
+                logger.info(f"✅ {provider_name}: {len(provider_channels)} channels")
                 return provider_channels
             else:
                 logger.warning(f"⚠️  {provider_name}: No channels found in {elapsed:.1f}s")
@@ -384,7 +318,7 @@ class UnifiedStreamingAggregator:
             if self.debug_mode:
                 logger.debug(traceback.format_exc())
             return []
-    
+
     def _get_all_channels_concurrent(self):
         """Get channels from all providers concurrently"""
         cache_key = 'all_channels'
@@ -399,22 +333,18 @@ class UnifiedStreamingAggregator:
         all_channels = []
         channel_number = 1
         
-        # Use ThreadPoolExecutor to fetch from all providers concurrently
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all provider tasks
             future_to_provider = {
                 executor.submit(self._fetch_provider_channels, name, provider): name 
                 for name, provider in self.providers.items()
             }
             
-            # Collect results as they complete
             for future in concurrent.futures.as_completed(future_to_provider):
                 provider_name = future_to_provider[future]
                 try:
                     provider_channels = future.result()
                     
                     if provider_channels:
-                        # Add provider info and assign channel numbers
                         for channel in provider_channels:
                             channel['provider'] = provider_name
                             channel['channel_number'] = channel.get('number', channel_number)
@@ -425,14 +355,10 @@ class UnifiedStreamingAggregator:
                 except Exception as e:
                     logger.error(f"Error processing results from {provider_name}: {e}")
         
-        # Apply filters and remove duplicates
         all_channels = self._apply_filters(all_channels)
         all_channels = self._remove_duplicates(all_channels)
-        
-        # Sort by channel number
         all_channels.sort(key=lambda x: x.get('channel_number', 999999))
         
-        # Cache the results
         with self.cache_lock:
             self.channels_cache[cache_key] = all_channels
             self.cache_expiry[cache_key] = time.time() + self.cache_duration
@@ -440,58 +366,21 @@ class UnifiedStreamingAggregator:
         elapsed = time.time() - start_time
         logger.info(f"Completed concurrent fetch: {len(all_channels)} channels in {elapsed:.2f}s")
         return all_channels
-    
+
     def _get_all_channels(self):
         """Get channels using concurrent method"""
         return self._get_all_channels_concurrent()
-    
-    def _get_all_epg_data(self):
-        """Get EPG data from all providers concurrently"""
-        cache_key = 'all_epg'
-        
-        with self.cache_lock:
-            if self._is_cache_valid(cache_key):
-                return self.epg_cache[cache_key]
-        
-        all_epg_data = {}
-        
-        # Use concurrent execution for EPG fetching too
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_provider = {
-                executor.submit(provider.get_epg_data): provider_name 
-                for provider_name, provider in self.providers.items()
-            }
-            
-            for future in concurrent.futures.as_completed(future_to_provider):
-                provider_name = future_to_provider[future]
-                try:
-                    provider_epg = future.result(timeout=self.provider_timeout)
-                    if provider_epg:
-                        all_epg_data.update(provider_epg)
-                        logger.info(f"Got EPG data for {len(provider_epg)} channels from {provider_name}")
-                except Exception as e:
-                    logger.error(f"Error fetching EPG data from {provider_name}: {e}")
-        
-        # Cache the results
-        with self.cache_lock:
-            self.epg_cache[cache_key] = all_epg_data
-            self.cache_expiry[cache_key] = time.time() + self.cache_duration
-            
-        return all_epg_data
-    
+
     def get_playlist(self):
         """Generate M3U playlist"""
         try:
             channels = self._get_all_channels()
             
-            # Build M3U content more efficiently
             m3u_lines = ['#EXTM3U']
             
             for channel in channels:
-                # Build EXTINF line more efficiently
                 extinf_parts = ['#EXTINF:-1']
                 
-                # Add attributes in batch
                 attrs = []
                 if channel.get('id'):
                     attrs.append(f'tvg-id="{channel["id"]}"')
@@ -523,88 +412,35 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Error generating playlist: {e}")
             return Response(f"Error generating playlist: {e}", status=500)
-    
-    def get_epg_xml(self):
-        """Generate EPG XML"""
-        try:
-            channels = self._get_all_channels()
-            epg_data = self._get_all_epg_data()
-            
-            # Create XML structure
-            root = ET.Element('tv')
-            root.set('generator-info-name', 'KPTV FAST Streams')
-            
-            # Sort channels by name for EPG
-            sorted_channels = sorted(channels, key=lambda x: x.get('name', '').lower())
 
-            # Add channel elements
-            for channel in sorted_channels:
-                channel_elem = ET.SubElement(root, 'channel')
-                channel_elem.set('id', str(channel.get('id', '')))
-                
-                display_name = ET.SubElement(channel_elem, 'display-name')
-                # Format: "Channel Name - Provider"
-                channel_name = channel.get('name', '')
-                provider_name = channel.get('provider', '').title()
-                if provider_name:
-                    display_name.text = f"{channel_name} - {provider_name}"
-                else:
-                    display_name.text = channel_name
-                
-                if channel.get('logo'):
-                    icon = ET.SubElement(channel_elem, 'icon')
-                    icon.set('src', channel['logo'])
-            
-            # Add programme elements
-            for channel_id, programmes in epg_data.items():
-                for programme in programmes:
-                    prog_elem = ET.SubElement(root, 'programme')
-                    prog_elem.set('channel', str(channel_id))
-                    prog_elem.set('start', programme.get('start', ''))
-                    prog_elem.set('stop', programme.get('stop', ''))
-                    
-                    if programme.get('title'):
-                        title = ET.SubElement(prog_elem, 'title')
-                        title.text = programme['title']
-                    
-                    if programme.get('description'):
-                        desc = ET.SubElement(prog_elem, 'desc')
-                        desc.text = programme['description']
-            
-            # Convert to string
-            xml_str = ET.tostring(root, encoding='unicode', method='xml')
-            xml_content = f'<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE tv SYSTEM "xmltv.dtd">\n{xml_str}'
-            
-            return Response(
-                xml_content,
-                mimetype='application/xml',
-                headers={'Content-Disposition': 'attachment; filename=epg.xml'}
-            )
-            
-        except Exception as e:
-            logger.error(f"Error generating EPG XML: {e}")
-            return Response(f"Error generating EPG XML: {e}", status=500)
-    
-    def get_epg_xml_gz(self):
-        """Generate compressed EPG XML"""
+    def get_epg(self):
+        """Serve combined EPG from all external sources"""
         try:
-            # Get the XML content
-            xml_response = self.get_epg_xml()
-            xml_content = xml_response.get_data(as_text=True)
+            aggregator = get_epg_aggregator()
             
-            # Compress it
-            compressed_data = gzip.compress(xml_content.encode('utf-8'))
+            accept_encoding = request.headers.get('Accept-Encoding', '')
             
-            return Response(
-                compressed_data,
-                mimetype='application/gzip',
-                headers={'Content-Disposition': 'attachment; filename=epg.xml.gz'}
-            )
-            
+            if 'gzip' in accept_encoding:
+                content = aggregator.get_combined_epg_gzipped()
+                return Response(
+                    content,
+                    mimetype='application/xml',
+                    headers={
+                        'Content-Encoding': 'gzip',
+                        'Content-Disposition': 'attachment; filename=epg.xml.gz'
+                    }
+                )
+            else:
+                content = aggregator.get_combined_epg()
+                return Response(
+                    content,
+                    mimetype='application/xml',
+                    headers={'Content-Disposition': 'attachment; filename=epg.xml'}
+                )
         except Exception as e:
-            logger.error(f"Error generating compressed EPG: {e}")
-            return Response(f"Error generating compressed EPG: {e}", status=500)
-    
+            logger.error(f"Error generating EPG: {e}")
+            return Response(f"Error generating EPG: {e}", status=500)
+
     def get_channels_json(self):
         """Return channels as JSON"""
         try:
@@ -616,7 +452,7 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Error generating channels JSON: {e}")
             return Response(f"Error generating channels JSON: {e}", status=500)
-    
+
     def get_debug_info(self):
         """Return debug information"""
         try:
@@ -632,9 +468,7 @@ class UnifiedStreamingAggregator:
             with self.cache_lock:
                 cache_info = {
                     'channels_cached': 'all_channels' in self.channels_cache,
-                    'epg_cached': 'all_epg' in self.epg_cache,
                     'channels_cache_expires': self.cache_expiry.get('all_channels', 0),
-                    'epg_cache_expires': self.cache_expiry.get('all_epg', 0),
                     'current_time': time.time()
                 }
             
@@ -661,7 +495,7 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Error generating debug info: {e}")
             return Response(f"Error generating debug info: {e}", status=500)
-    
+
     def get_status(self):
         """Return status page"""
         try:
@@ -695,11 +529,7 @@ class UnifiedStreamingAggregator:
                 <h3>Endpoints:</h3>
                 <ul>
                     <li><a href="/playlist">M3U Playlist</a></li>
-                    <li><a href="/epg">EPG XML (from providers)</a></li>
-                    <li><a href="/epggz">EPG XML Compressed (from providers)</a></li>
-                    <li><a href="/epg/combined">EPG Combined (mjh.nz + external sources)</a></li>
-                    <li><a href="/epg/combined.xml.gz">EPG Combined Compressed</a></li>
-                    <li><a href="/epg/sources">EPG Sources List</a></li>
+                    <li><a href="/epg">EPG XML</a></li>
                     <li><a href="/channels">Channels JSON</a></li>
                     <li><a href="/debug">Debug Info (JSON)</a></li>
                     <li><a href="/refresh">Force Refresh</a></li>
@@ -713,141 +543,45 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Error generating status page: {e}")
             return Response(f"Error generating status page: {e}", status=500)
-    
+
     def clear_cache(self):
         """Clear all caches"""
         try:
             with self.cache_lock:
                 self.channels_cache.clear()
-                self.epg_cache.clear()
                 self.cache_expiry.clear()
+            
+            # Also clear EPG aggregator cache
+            aggregator = get_epg_aggregator()
+            aggregator.clear_cache()
                 
             return Response("Cache cleared successfully", mimetype='text/plain')
         except Exception as e:
             logger.error(f"Error clearing cache: {e}")
             return Response(f"Error clearing cache: {e}", status=500)
-    
+
     def force_refresh(self):
         """Force refresh of all data"""
         try:
-            # Clear cache first
             with self.cache_lock:
                 self.channels_cache.clear()
-                self.epg_cache.clear()
                 self.cache_expiry.clear()
             
-            # Force new fetch
             start_time = time.time()
             
             logger.info("🔄 Force refreshing channels...")
             channels = self._get_all_channels()
-            channels_elapsed = time.time() - start_time
-            
-            logger.info("🔄 Force refreshing EPG...")
-            epg_start_time = time.time()
-            epg_data = self._get_all_epg_data()
-            epg_elapsed = time.time() - epg_start_time
             
             total_elapsed = time.time() - start_time
             
             return Response(
-                f"Refresh completed in {total_elapsed:.2f}s. "
-                f"Found {len(channels)} channels and {len(epg_data)} channels with EPG. "
-                f"Channels: {channels_elapsed:.1f}s, EPG: {epg_elapsed:.1f}s",
+                f"Refresh completed in {total_elapsed:.2f}s. Found {len(channels)} channels.",
                 mimetype='text/plain'
             )
         except Exception as e:
             logger.error(f"Error forcing refresh: {e}")
             return Response(f"Error forcing refresh: {e}", status=500)
 
-    def get_epg_combined(self):
-        """Serve combined EPG from all external sources (mjh.nz, etc.)"""
-        try:
-            aggregator = get_epg_aggregator()
-            
-            # Check if client accepts gzip
-            accept_encoding = request.headers.get('Accept-Encoding', '')
-            
-            if 'gzip' in accept_encoding:
-                content = aggregator.get_combined_epg_gzipped()
-                return Response(
-                    content,
-                    mimetype='application/xml',
-                    headers={
-                        'Content-Encoding': 'gzip',
-                        'Cache-Control': 'public, max-age=3600'
-                    }
-                )
-            else:
-                content = aggregator.get_combined_epg()
-                return Response(
-                    content,
-                    mimetype='application/xml; charset=utf-8',
-                    headers={'Cache-Control': 'public, max-age=3600'}
-                )
-        except Exception as e:
-            logger.error(f"Error generating combined EPG: {e}")
-            return Response(f"Error generating combined EPG: {e}", status=500)
-    
-    def get_epg_combined_gz(self):
-        """Serve combined EPG as gzipped file download"""
-        try:
-            aggregator = get_epg_aggregator()
-            content = aggregator.get_combined_epg_gzipped()
-            
-            return Response(
-                content,
-                mimetype='application/gzip',
-                headers={
-                    'Content-Disposition': 'attachment; filename="epg-combined.xml.gz"',
-                    'Cache-Control': 'public, max-age=3600'
-                }
-            )
-        except Exception as e:
-            logger.error(f"Error generating combined EPG gzip: {e}")
-            return Response(f"Error generating combined EPG gzip: {e}", status=500)
-    
-    def get_epg_sources(self):
-        """List available and enabled EPG sources"""
-        try:
-            aggregator = get_epg_aggregator()
-            
-            return Response(
-                json.dumps({
-                    'available': aggregator.get_available_sources(),
-                    'enabled': aggregator.get_enabled_sources()
-                }, indent=2),
-                mimetype='application/json'
-            )
-        except Exception as e:
-            logger.error(f"Error getting EPG sources: {e}")
-            return Response(f"Error getting EPG sources: {e}", status=500)
-    
-    def refresh_epg_aggregator(self):
-        """Force refresh the EPG aggregator cache"""
-        try:
-            aggregator = get_epg_aggregator()
-            aggregator.clear_cache()
-            
-            # Optionally trigger immediate refresh
-            fetch_now = request.args.get('fetch', 'false').lower() == 'true'
-            
-            if fetch_now:
-                aggregator.get_combined_epg(force_refresh=True)
-                return Response(
-                    json.dumps({'status': 'refreshed', 'message': 'EPG aggregator cache refreshed and rebuilt'}),
-                    mimetype='application/json'
-                )
-            
-            return Response(
-                json.dumps({'status': 'cleared', 'message': 'EPG aggregator cache cleared, will rebuild on next request'}),
-                mimetype='application/json'
-            )
-        except Exception as e:
-            logger.error(f"Error refreshing EPG aggregator: {e}")
-            return Response(f"Error refreshing EPG aggregator: {e}", status=500)
-
-        
     def run(self):
         """Start the server"""
         logger.info(f"Starting KPTV FAST Streams on port {self.port}")
@@ -862,6 +596,7 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Server error: {e}")
             raise
+
 
 if __name__ == '__main__':
     try:
