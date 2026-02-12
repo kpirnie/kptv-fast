@@ -187,6 +187,7 @@ class UnifiedStreamingAggregator:
 
     def _setup_routes(self):
         """Setup Flask routes"""
+        self.app.route('/')(self.get_status)
         self.app.route('/playlist')(self.get_playlist)
         self.app.route('/epg')(self.get_epg)
         self.app.route('/channels')(self.get_channels_json)
@@ -446,7 +447,7 @@ class UnifiedStreamingAggregator:
         try:
             channels = self._get_all_channels()
             return Response(
-                json.dumps(channels, indent=2),
+                json.dumps(channels, separators=(',', ':')),
                 mimetype='application/json'
             )
         except Exception as e:
@@ -499,7 +500,24 @@ class UnifiedStreamingAggregator:
     def get_status(self):
         """Return status page"""
         try:
-            channels = self._get_all_channels()
+            refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
+
+            # Keep the status page responsive by using cached channels unless
+            # an explicit refresh is requested.
+            if refresh:
+                channels = self._get_all_channels()
+                channels_source = 'live refresh'
+            else:
+                with self.cache_lock:
+                    channels = list(self.channels_cache.get('all_channels', []))
+                    cache_valid = self._is_cache_valid('all_channels')
+                if cache_valid:
+                    channels_source = 'warm cache'
+                elif channels:
+                    channels_source = 'stale cache'
+                else:
+                    channels_source = 'not loaded yet'
+
             provider_stats = {}
             
             for channel in channels:
@@ -513,6 +531,7 @@ class UnifiedStreamingAggregator:
                 <h1>KPTV FAST Streams</h1>
                 <h2>Status</h2>
                 <p>Total Channels: {len(channels)}</p>
+                <p>Channels Source: {channels_source}</p>
                 <p>Initialized Providers: {', '.join(self.providers.keys())}</p>
                 <p>Cache Duration: {self.cache_duration} seconds</p>
                 <p>Max Workers: {self.max_workers}</p>
@@ -528,6 +547,7 @@ class UnifiedStreamingAggregator:
                 </ul>
                 <h3>Endpoints:</h3>
                 <ul>
+                    <li><a href="/?refresh=1">Homepage Status (force refresh)</a></li>
                     <li><a href="/playlist">M3U Playlist</a></li>
                     <li><a href="/epg">EPG XML</a></li>
                     <li><a href="/channels">Channels JSON</a></li>
