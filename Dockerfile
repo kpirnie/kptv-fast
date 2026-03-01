@@ -72,8 +72,5 @@ COPY --chown=appuser:appuser utils/ ./utils/
 # Switch to non-root user
 USER appuser
 
-# Expose port
-EXPOSE 7777/tcp
-
 # Run the application
 CMD ["python3", "app.py"]

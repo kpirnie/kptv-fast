@@ -24,14 +24,16 @@ class EPGAggregator:
         
         # EPG sources to fetch and combine
         self.epg_sources = {
-            'plex': 'https://i.mjh.nz/Plex/all.xml',
-            'pluto': 'https://i.mjh.nz/PlutoTV/all.xml',
-            'samsung': 'https://i.mjh.nz/SamsungTVPlus/all.xml',
-            'stirr': 'https://i.mjh.nz/Stirr/all.xml',
-            'lg': 'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
+            'plex':     'https://i.mjh.nz/Plex/all.xml',
+            'pluto':    'https://i.mjh.nz/PlutoTV/all.xml',
+            'samsung':  'https://i.mjh.nz/SamsungTVPlus/all.xml',
+            'stirr':    'https://i.mjh.nz/Stirr/all.xml',
+            'lg':       'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
             'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
-            'tubi': 'https://github.com/BuddyChewChew/tubi-scraper/raw/refs/heads/main/tubi_epg.xml',
-            'xumo': 'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
+            'tubi':     'https://github.com/BuddyChewChew/tubi-scraper/raw/refs/heads/main/tubi_epg.xml',
+            'xumo':     'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
+            # Apsattv providers with known EPG sources
+            'localnow': 'https://raw.githubusercontent.com/BuddyChewChew/localnow-playlist-generator/refs/heads/main/epg.xml',
         }
         
         self.session = requests.Session()
@@ -52,7 +54,7 @@ class EPGAggregator:
             if url.endswith('.gz'):
                 try:
                     content = gzip.decompress(content)
-                except:
+                except Exception:
                     pass
             
             xml_text = content.decode('utf-8')
@@ -97,7 +99,8 @@ class EPGAggregator:
         all_programmes = []
         seen_channel_ids = set()
         
-        # Fetch all sources
+        import re
+        
         for name, url in self.epg_sources.items():
             xml_text = self._fetch_source(name, url)
             if not xml_text:
@@ -106,7 +109,6 @@ class EPGAggregator:
             channels, programmes = self._extract_content(xml_text)
             
             # Add channels (dedupe by id)
-            import re
             for ch in channels:
                 id_match = re.search(r'id="([^"]+)"', ch)
                 if id_match:
@@ -115,7 +117,6 @@ class EPGAggregator:
                         seen_channel_ids.add(ch_id)
                         all_channels.append(ch)
             
-            # Add all programmes
             all_programmes.extend(programmes)
             
             logger.info(f"  {name}: {len(channels)} channels, {len(programmes)} programmes")
@@ -134,9 +135,11 @@ class EPGAggregator:
         combined_xml = '\n'.join(xml_parts)
         
         elapsed = time.time() - start_time
-        logger.info(f"Combined EPG: {len(all_channels)} channels, {len(all_programmes)} programmes in {elapsed:.1f}s")
+        logger.info(
+            f"Combined EPG: {len(all_channels)} channels, "
+            f"{len(all_programmes)} programmes in {elapsed:.1f}s"
+        )
         
-        # Cache results
         with self.cache_lock:
             self.cache = combined_xml
             self.cache_gz = gzip.compress(combined_xml.encode('utf-8'))

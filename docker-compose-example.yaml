@@ -8,7 +8,6 @@ services:
     environment: 
     
       # Server configuration
-      - PORT=7777
       - CACHE_DURATION=7200 # 2 hour
 
       # Startup cache warming
@@ -20,11 +19,13 @@ services:
       - MAX_WORKERS=5           # Concurrent provider fetches (default: 5)
       - PROVIDER_TIMEOUT=45     # Per-provider timeout in seconds (default: 45)
 
-      # Provider configuration: all or any of these: xumo,tubi,pluto,plex,samsung (accepts comma-delimited list)
+      # Provider configuration: all,xumo,tubi,pluto,plex,samsung,lg,distrotv,stirr,git_freetv,git_iptv,vizio,roku,localnow,tcl,tclplus,firetv,xiaomi (accepts comma-delimited list)
       - ENABLED_PROVIDERS=all
       
       # Provider settings
       - PLUTO_REGION=us_east # 
+      - PLUTO_USERNAME=
+      - PLUTO_PASSWORD=
       - PLEX_REGION=local # 
       - SAMSUNG_REGION=us # 
       

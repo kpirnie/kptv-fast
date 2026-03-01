@@ -12,10 +12,19 @@ from .distrotv_provider import DistroTVProvider
 from .lg_provider import LGProvider
 from .git_providers import GitIptvProvider, GitFreetvProvider
 from .stirr_provider import StirrProvider
+from .apsattv_provider import (
+    VizioProvider,
+    RokuProvider,
+    LocalNowProvider,
+    TCLProvider,
+    TCLPlusProvider,
+    FireTVProvider,
+    XiaomiProvider,
+)
 
 __all__ = [
     'BaseProvider',
-    'XumoProvider', 
+    'XumoProvider',
     'TubiProvider',
     'PlutoProvider',
     'PlexProvider',
@@ -24,5 +33,12 @@ __all__ = [
     'LGProvider',
     'GitIptvProvider',
     'GitFreetvProvider',
-    'StirrProvider'
+    'StirrProvider',
+    'VizioProvider',
+    'RokuProvider',
+    'LocalNowProvider',
+    'TCLProvider',
+    'TCLPlusProvider',
+    'FireTVProvider',
+    'XiaomiProvider',
 ]

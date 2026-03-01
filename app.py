@@ -174,6 +174,28 @@ class UnifiedStreamingAggregator:
             logger.info("Successfully imported StirrProvider")
         except Exception as e:
             logger.error(f"Failed to import StirrProvider: {e}")
+
+        # ── apsattv.com providers ─────────────────────────────────────────
+        try:
+            from providers.apsattv_provider import (
+                VizioProvider,
+                RokuProvider,
+                LocalNowProvider,
+                TCLProvider,
+                TCLPlusProvider,
+                FireTVProvider,
+                XiaomiProvider,
+            )
+            available_providers['vizio']    = VizioProvider
+            available_providers['roku']     = RokuProvider
+            available_providers['localnow'] = LocalNowProvider
+            available_providers['tcl']      = TCLProvider
+            available_providers['tclplus']  = TCLPlusProvider
+            available_providers['firetv']   = FireTVProvider
+            available_providers['xiaomi']   = XiaomiProvider
+            logger.info("Successfully imported apsattv providers (vizio, roku, localnow, tcl, firetv, xiaomi)")
+        except Exception as e:
+            logger.error(f"Failed to import apsattv providers: {e}")
         
         for name, provider_class in available_providers.items():
             if self.enabled_providers == ['all'] or name in self.enabled_providers:
@@ -604,7 +626,7 @@ class UnifiedStreamingAggregator:
 
     def run(self):
         """Start the server"""
-        logger.info(f"Starting KPTV FAST Streams on port {self.port}")
+        logger.info(f"Starting KPTV FAST Streams")
         logger.info(f"Enabled providers: {list(self.providers.keys())}")
         logger.info(f"Performance: {self.max_workers} workers, {self.provider_timeout}s timeout")
         if self.git_country:

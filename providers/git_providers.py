@@ -257,7 +257,7 @@ class GitIptvProvider(BaseProvider):
             channels = self._parse_m3u_content(content, source_name)
             
             if channels:
-                self.logger.debug(f"Parsed {len(channels)} channels from {file_name}")
+                self.logger.debug(f"Parsed {len(channels)} channels")
             
             return channels
             
@@ -577,7 +577,7 @@ class GitFreetvProvider(BaseProvider):
             channels = self._parse_m3u_content(content, source_name)
             
             if channels:
-                self.logger.debug(f"Parsed {len(channels)} channels from {file_name}")
+                self.logger.debug(f"Parsed {len(channels)} channels")
             
             return channels
             

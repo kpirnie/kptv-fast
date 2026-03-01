@@ -22,6 +22,10 @@ class PlutoProvider(BaseProvider):
         
         # Get region from environment or default to US West
         self.region = os.getenv('PLUTO_REGION', 'us_west')
+
+        # Load credentials from environment
+        self.username = os.getenv('PLUTO_USERNAME')
+        self.password = os.getenv('PLUTO_PASSWORD')
         
         # Regional IP addresses for geo-spoofing
         self.x_forward = {
@@ -70,6 +74,12 @@ class PlutoProvider(BaseProvider):
                 'appLaunchCount': '',
                 'lastAppLaunchDate': '',
             }
+
+            # Inject credentials if they exist
+            if self.username and self.password:
+                params['username'] = self.username
+                params['password'] = self.password
+                self.logger.info("Using Pluto TV credentials for authentication")
             
             response = requests.get(url, headers=self.headers, params=params, timeout=self.get_timeout())
             response.raise_for_status()
