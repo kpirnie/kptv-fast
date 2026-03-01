@@ -313,12 +313,10 @@ class GitIptvProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Error fetching Git IPTV channels: {e}")
             return []
-    
-    def get_epg_data(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Get EPG data for Git IPTV channels"""
-        # iptv-org doesn't typically provide EPG data in their M3U files
-        return {}
 
+    def get_epg_data(self):
+        """EPG handled by aggregator"""
+        return {}
 
 class GitFreetvProvider(BaseProvider):
     """Provider for Free-TV/IPTV repository"""
@@ -635,7 +633,6 @@ class GitFreetvProvider(BaseProvider):
             self.logger.error(f"Error fetching Git Free TV channels: {e}")
             return []
     
-    def get_epg_data(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Get EPG data for Git Free TV channels"""
-        # Free-TV/IPTV doesn't typically provide EPG data
+    def get_epg_data(self):
+        """EPG handled by aggregator"""
         return {}

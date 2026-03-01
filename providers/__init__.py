@@ -11,6 +11,7 @@ from .samsung_provider import SamsungProvider
 from .distrotv_provider import DistroTVProvider
 from .lg_provider import LGProvider
 from .git_providers import GitIptvProvider, GitFreetvProvider
+from .stirr_provider import StirrProvider
 
 __all__ = [
     'BaseProvider',
@@ -22,5 +23,6 @@ __all__ = [
     'DistroTVProvider',
     'LGProvider',
     'GitIptvProvider',
-    'GitFreetvProvider'
+    'GitFreetvProvider',
+    'StirrProvider'
 ]

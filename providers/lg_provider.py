@@ -320,27 +320,6 @@ class LGProvider(BaseProvider):
             self.logger.error(f"Error fetching LG channels: {e}")
             return []
     
-    def get_epg_data(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Get EPG data for LG channels"""
-        try:
-            channels = self.get_channels()
-            if not channels:
-                return {}
-            
-            # Use fallback EPG
-            self.logger.info("Using fallback EPG for LG")
-            
-            try:
-                from utils.epg_fallback import EPGFallbackManager
-                fallback_manager = EPGFallbackManager()
-                epg_data = fallback_manager.get_fallback_epg('lg', channels)
-                if epg_data:
-                    self.logger.info(f"Retrieved fallback EPG for {len(epg_data)} LG channels")
-                return epg_data
-            except Exception as e:
-                self.logger.error(f"Fallback EPG failed for LG: {e}")
-                return {}
-        
-        except Exception as e:
-            self.logger.error(f"Error fetching LG EPG data: {e}")
-            return {}
+    def get_epg_data(self):
+        """EPG handled by aggregator"""
+        return {}

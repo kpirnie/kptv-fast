@@ -31,6 +31,7 @@ This application aggregates live TV channels from multiple streaming services in
 | **Tubi** | ~50+ | None | Native + Fallback | Anonymous access |
 | **DistroTV** | ~150+ | None | Fallback Only | Free multicultural content |
 | **LG Channels** | ~100-500+ | None | Fallback Only | Country-specific, multiple regions |
+| **Stirr** | ~140+ | None | Native + Fallback Only | Anonymous access |
 | **Git IPTV (iptv-org)** | ~500-2000+ | None | None | Community-maintained, country-specific |
 | **Git Free TV** | ~100-500+ | None | None | Free TV channels, various countries |
 
