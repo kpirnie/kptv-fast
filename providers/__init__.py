@@ -20,7 +20,10 @@ from .apsattv_provider import (
     TCLPlusProvider,
     FireTVProvider,
     XiaomiProvider,
+    TabloProvider,
+    RedboxProvider
 )
+from providers.philo_provider import PhiloProvider
 
 __all__ = [
     'BaseProvider',
@@ -41,4 +44,7 @@ __all__ = [
     'TCLPlusProvider',
     'FireTVProvider',
     'XiaomiProvider',
+    'PhiloProvider',
+    'TabloProvider',
+    'RedboxProvider',
 ]

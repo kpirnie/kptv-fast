@@ -1,50 +1,62 @@
 services:
   kptv_fast:
-    image: ghcr.io/kpirnie/kptv_fast:latest
+    # image: ghcr.io/kpirnie/kptv_fast:latest
+    image: ghcr.io/kpirnie/kptv_fast:dev
     container_name: kptv_fast
     hostname: kptv_fast
     ports:
-      - 7777:7777
+      - 8080:8080
     environment: 
-    
+
       # Server configuration
       - CACHE_DURATION=7200 # 2 hour
 
       # Startup cache warming
       - WARM_CACHE_ON_STARTUP=true    # Enable startup cache warming
       - STARTUP_CACHE_DELAY=10        # Wait 10s before warming cache
-      - WARM_EPG_ON_STARTUP=false     # Also warm EPG cache (slower)
+      - WARM_EPG_ON_STARTUP=true      # Also warm EPG cache (slower)
       
       # Performance
       - MAX_WORKERS=5           # Concurrent provider fetches (default: 5)
-      - PROVIDER_TIMEOUT=45     # Per-provider timeout in seconds (default: 45)
+      - PROVIDER_TIMEOUT=60     # Per-provider timeout in seconds (default: 60)
+      - PYTHONUNBUFFERED=1
 
-      # Provider configuration: all,xumo,tubi,pluto,plex,samsung,lg,distrotv,stirr,git_freetv,git_iptv,vizio,roku,localnow,tcl,tclplus,firetv,xiaomi (accepts comma-delimited list)
+      # Provider configuration: 
+        # all or: 
+        # xumo,tubi,pluto,plex,samsung,
+        # lg,distrotv,stirr,git_freetv,git_iptv,
+        # vizio,roku,localnow,tcl,tclplus,firetv,
+        # xiaomi,philo,tablo,redbox
       - ENABLED_PROVIDERS=all
       
-      # Provider settings
-      - PLUTO_REGION=us_east # 
+      # Provider Specific Config
       - PLUTO_USERNAME=
       - PLUTO_PASSWORD=
-      - PLEX_REGION=local # 
-      - SAMSUNG_REGION=us # 
-      
-      # Git provider country filtering (supports 2-letter codes, 3-letter codes, or full names - comma separated)
-      # Examples: us,ca,uk  or  usa,canada,united kingdom  or  us,canada,germany,franceL # No filter (all countries)
-      - GIT_COUNTRY=us,ca,uk     # Only include these countries from Git IPTV providers
+      - PHILO_SESSION_ID=
+      - PHILO_HASHED_SESSION_ID=
+
+      # Regional settings
+      - PLUTO_REGION=us_east
+      - PLEX_REGION=local
+      - SAMSUNG_REGION=us
+      - GIT_COUNTRY=us,ca,uk,canada,usa
+      - LG_COUNTRY=us,ca,uk,gb
 
       # Filtering (regex patterns)
-      - CHANNEL_NAME_INCLUDE= # to include streams with the names in your regex
-      - CHANNEL_NAME_EXCLUDE= # to exclude streams with the names in your regex
-      - GROUP_INCLUDE= # to include streams with the groups in your regex
-      - GROUP_EXCLUDE= # to exclude streams with the groups in your regex
+      - CHANNEL_NAME_INCLUDE=
+      - CHANNEL_NAME_EXCLUDE=
+      - GROUP_INCLUDE=
+      - GROUP_EXCLUDE=
 
       # Debug logging
       - DEBUG=false
       
+    # keep it running unless the container is stopped
     restart: unless-stopped
+
+    # healthcheck
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:7777/status"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/status"]
       interval: 30s
       timeout: 10s
       retries: 3

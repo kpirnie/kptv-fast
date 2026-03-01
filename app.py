@@ -37,7 +37,6 @@ class UnifiedStreamingAggregator:
         self.cache_lock = threading.Lock()
         
         # Configuration
-        self.port = int(os.getenv('PORT', 7777))
         self.cache_duration = int(os.getenv('CACHE_DURATION', 7200))
         self.enabled_providers = os.getenv('ENABLED_PROVIDERS', 'all').split(',')
         
@@ -175,6 +174,13 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Failed to import StirrProvider: {e}")
 
+        try:
+            from providers.philo_provider import PhiloProvider
+            available_providers['philo'] = PhiloProvider
+            logger.info("Successfully imported PhiloProvider")
+        except Exception as e:
+            logger.error(f"Failed to import PhiloProvider: {e}")
+
         # ── apsattv.com providers ─────────────────────────────────────────
         try:
             from providers.apsattv_provider import (
@@ -185,6 +191,8 @@ class UnifiedStreamingAggregator:
                 TCLPlusProvider,
                 FireTVProvider,
                 XiaomiProvider,
+                TabloProvider,
+                RedboxProvider
             )
             available_providers['vizio']    = VizioProvider
             available_providers['roku']     = RokuProvider
@@ -193,9 +201,11 @@ class UnifiedStreamingAggregator:
             available_providers['tclplus']  = TCLPlusProvider
             available_providers['firetv']   = FireTVProvider
             available_providers['xiaomi']   = XiaomiProvider
-            logger.info("Successfully imported apsattv providers (vizio, roku, localnow, tcl, firetv, xiaomi)")
+            available_providers['tablo']   = TabloProvider
+            available_providers['redbox']   = RedboxProvider
+            logger.info("Successfully imported vizio, roku, localnow, tcl, firetv, xiaomi, tablo, redbox")
         except Exception as e:
-            logger.error(f"Failed to import apsattv providers: {e}")
+            logger.error(f"Failed to import providers: {e}")
         
         for name, provider_class in available_providers.items():
             if self.enabled_providers == ['all'] or name in self.enabled_providers:
@@ -633,7 +643,7 @@ class UnifiedStreamingAggregator:
             logger.info(f"Git country filter: {self.git_country}")
         
         try:
-            server = WSGIServer(('0.0.0.0', self.port), self.app, log=None)
+            server = WSGIServer(('0.0.0.0', 8080), self.app, log=None)
             server.serve_forever()
         except Exception as e:
             logger.error(f"Server error: {e}")

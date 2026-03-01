@@ -8,7 +8,7 @@ This application aggregates live TV channels from multiple streaming services in
 
 ## ✨ Features
 
-- **9 Streaming Providers**: Xumo, Tubi, Plex, Pluto TV, Samsung TV Plus, DistroTV, LG Channels, and GitHub-based IPTV repositories
+- **Many Streaming Providers**: See table below
 - **Enhanced EPG System**: Automatic fallback to reliable external EPG sources when native implementations fail
 - **High Performance**: Concurrent channel fetching with ~15-20 second startup time
 - **Smart Caching**: 2-hour cache with background refresh to keep channels ready
@@ -24,7 +24,7 @@ This application aggregates live TV channels from multiple streaming services in
 
 | Provider | Channels* | Authentication | EPG Source | Notes |
 |----------|-----------|----------------|------------|-------|
-| **Pluto TV** | ~400 | None | Native + Fallback | Largest selection, reliable |
+| **Pluto TV** | ~400 | Yes(not required) | Native + Fallback | Largest selection, reliable |
 | **Plex** | ~650 | None | Native + Fallback | High-quality channels |
 | **Samsung TV Plus** | ~420 | None | Native + Fallback | Good variety |
 | **Xumo** | ~85 | None | Fallback Only | Optimized for speed |
@@ -34,6 +34,13 @@ This application aggregates live TV channels from multiple streaming services in
 | **Stirr** | ~140+ | None | Native + Fallback Only | Anonymous access |
 | **Git IPTV (iptv-org)** | ~500-2000+ | None | None | Community-maintained, country-specific |
 | **Git Free TV** | ~100-500+ | None | None | Free TV channels, various countries |
+| **Vizio** | ~300+ | None | None | Good Variety |
+| **LocalNow** | ~400+ | None | Fallback Only | Good Variety |
+| **TCL** | ~500+ | None | None | Good Variety |
+| **TCL Plus** | ~400+ | None | None | Good Variety |
+| **Fire TV** | ~50+ | None | None | Good Variety |
+| **Xiaomi** | ~200+ | None | None | Good Variety |
+| **Roku** | ~300+ | None | None | Good Variety |
 
 *Channel counts are approximate and vary by region and filtering
 
@@ -49,7 +56,7 @@ services:
   unified-streaming:
     image: ghcr.io/kpirnie/kptv-fast:latest
     ports:
-      - "7777:7777"
+      - "8080:8080"
     environment:
       - DEBUG=false
       - CACHE_DURATION=7200
@@ -60,7 +67,7 @@ services:
       - LG_COUNTRY=us,ca,uk   # Filter LG provider to these countries
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7777/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,10 +79,10 @@ docker-compose up -d
 ```
 
 3. **Access your content:**
-   - Status page: `http://localhost:7777/status`
-   - M3U playlist: `http://localhost:7777/playlist`
-   - EPG: `http://localhost:7777/epg`
-   - EPG GZ: `http://localhost:7777/epggz`
+   - Status page: `http://localhost:8080/status`
+   - M3U playlist: `http://localhost:8080/playlist`
+   - EPG: `http://localhost:8080/epg`
+   - EPG GZ: `http://localhost:8080/epggz`
 
 ### Manual Build
 
@@ -93,7 +100,6 @@ docker-compose up -d
 #### Basic Settings
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `7777` | HTTP server port |
 | `DEBUG` | `false` | Enable verbose logging |
 | `ENABLED_PROVIDERS` | `all` | Comma-separated list of providers to enable |
 
@@ -175,7 +181,6 @@ Both `GIT_COUNTRY` and `LG_COUNTRY` environment variables support flexible count
 #### Basic Setup
 ```yaml
 environment:
-  - PORT=7777
   - DEBUG=false
   - CACHE_DURATION=7200
 ```
@@ -241,13 +246,13 @@ The application features an advanced EPG system with automatic fallback support:
 - **`GET /channels`** - JSON formatted channel list
 
 ### Management Endpoints
-- **`GET /status`** - HTML status page with statistics
+- **`GET /`** - HTML status page with statistics
 - **`GET /debug`** - JSON debug information
 - **`GET /refresh`** - Force cache refresh: set a cronjob to curl/wget this endpoint to setup a regular refresh
 - **`GET /clear_cache`** - Clear all cached data
 
 ### Status Page
-The status page (`/status`) provides:
+The status page (`/`) provides:
 - Total channel count and EPG coverage
 - Per-provider statistics with EPG status
 - Cache status and performance metrics
@@ -287,27 +292,27 @@ The status page (`/status`) provides:
 #### No Channels Loading
 ```bash
 # Check provider status
-curl http://localhost:7777/debug
+curl http://localhost:8080/debug
 
 # Check logs
 docker-compose logs -f kptv-fast
 
 # Force refresh
-curl http://localhost:7777/refresh
+curl http://localhost:8080/refresh
 ```
 
 #### Poor EPG Coverage
 ```bash
 # Check EPG status in debug endpoint
-curl http://localhost:7777/debug | jq '.epg_stats'
+curl http://localhost:8080/debug | jq '.epg_stats'
 
 # Check enhanced EPG system status
-curl http://localhost:7777/status
+curl http://localhost:8080/
 # Look for "Enhanced EPG system: ✅ Active"
 
 # Force EPG refresh
-curl http://localhost:7777/clear_cache
-curl http://localhost:7777/refresh
+curl http://localhost:8080/clear_cache
+curl http://localhost:8080/refresh
 ```
 
 #### Slow Performance
@@ -365,7 +370,7 @@ This provides:
 The application includes built-in health monitoring:
 ```bash
 # Check health
-curl http://localhost:7777/status
+curl http://localhost:8080/
 
 # Docker health check
 docker-compose ps
@@ -404,8 +409,8 @@ EPG system features:
 
 ### Channels DVR
 1. Add source in Channels DVR
-2. Use M3U URL: `http://your-server:7777/playlist`
-3. Use EPG URL: `http://your-server:7777/epg`
+2. Use M3U URL: `http://your-server:8080/playlist`
+3. Use EPG URL: `http://your-server:8080/epg`
 
 ### Plex
 1. Install the IPTV plugin
@@ -414,7 +419,7 @@ EPG system features:
 
 ### VLC
 ```bash
-vlc http://your-server:7777/playlist
+vlc http://your-server:8080/playlist
 ```
 
 ### Kodi
@@ -463,7 +468,7 @@ EPG System Examples:
 ```yaml
 # Restrict to local network
 ports:
-  - "127.0.0.1:7777:7777"
+  - "127.0.0.1:8080:8080"
 
 # Or use reverse proxy
 labels:

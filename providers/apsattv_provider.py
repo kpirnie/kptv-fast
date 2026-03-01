@@ -250,3 +250,23 @@ class XiaomiProvider(ApsattvBaseProvider):
 
     def __init__(self):
         super().__init__('xiaomi')
+
+class TabloProvider(ApsattvBaseProvider):
+    """Tablo channels"""
+    SOURCE_URL        = 'https://www.apsattv.com/tablo.m3u'
+    DEFAULT_GROUP     = 'Tablo'
+    ID_PREFIX         = 'tablo'
+    DESCRIPTION_LABEL = 'Tablo'
+
+    def __init__(self):
+        super().__init__('tablo')
+
+class RedboxProvider(ApsattvBaseProvider):
+    """Redbox channels"""
+    SOURCE_URL        = 'https://www.apsattv.com/redbox.m3u'
+    DEFAULT_GROUP     = 'Redbox'
+    ID_PREFIX         = 'redbox'
+    DESCRIPTION_LABEL = 'Redbox'
+
+    def __init__(self):
+        super().__init__('redbox')
