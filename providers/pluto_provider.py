@@ -24,8 +24,10 @@ class PlutoProvider(BaseProvider):
         self.region = os.getenv('PLUTO_REGION', 'us_west')
 
         # Load credentials from environment
-        self.username = os.getenv('PLUTO_USERNAME').strip() or None
-        self.password = os.getenv('PLUTO_PASSWORD').strip() or None
+        self.username = os.getenv('PLUTO_USERNAME')
+        self.username = self.username.strip() if self.username else None
+        self.password = os.getenv('PLUTO_PASSWORD')
+        self.password = self.password.strip() if self.password else None
         
         # Regional IP addresses for geo-spoofing
         self.x_forward = {
