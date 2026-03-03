@@ -43,7 +43,7 @@ class StirrProvider(BaseProvider):
         """Fetch stream URL from the playable endpoint for channels missing 'live' field"""
         try:
             url = f"{self.playable_url}/{video_id}/playable"
-            response = self.make_request('POST', url, headers=self.headers)
+            response = self.make_request('GET', url, headers=self.headers)
             
             if response.status_code != 200:
                 self.logger.debug(f"Playable endpoint returned {response.status_code} for video {video_id}")
