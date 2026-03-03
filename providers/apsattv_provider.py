@@ -12,7 +12,6 @@ import time
 from typing import List, Dict, Any, Set
 from .base_provider import BaseProvider
 
-
 class ApsattvBaseProvider(BaseProvider):
     """
     Shared base for all single-URL apsattv.com M3U providers.
@@ -186,18 +185,6 @@ class VizioProvider(ApsattvBaseProvider):
     def __init__(self):
         super().__init__('vizio')
 
-
-class RokuProvider(ApsattvBaseProvider):
-    """The Roku Channel channels"""
-    SOURCE_URL        = 'https://www.apsattv.com/rok.m3u'
-    DEFAULT_GROUP     = 'The Roku Channel'
-    ID_PREFIX         = 'roku'
-    DESCRIPTION_LABEL = 'The Roku Channel'
-
-    def __init__(self):
-        super().__init__('roku')
-
-
 class LocalNowProvider(ApsattvBaseProvider):
     """Local Now channels"""
     SOURCE_URL        = 'https://www.apsattv.com/localnow.m3u'
@@ -207,7 +194,6 @@ class LocalNowProvider(ApsattvBaseProvider):
 
     def __init__(self):
         super().__init__('localnow')
-
 
 class TCLProvider(ApsattvBaseProvider):
     """TCL TV channels"""
@@ -229,7 +215,6 @@ class TCLPlusProvider(ApsattvBaseProvider):
     def __init__(self):
         super().__init__('tclplus')
 
-
 class FireTVProvider(ApsattvBaseProvider):
     """Fire TV free channels"""
     SOURCE_URL        = 'https://www.apsattv.com/firetv.m3u'
@@ -239,7 +224,6 @@ class FireTVProvider(ApsattvBaseProvider):
 
     def __init__(self):
         super().__init__('firetv')
-
 
 class XiaomiProvider(ApsattvBaseProvider):
     """Xiaomi TV+ channels"""
@@ -260,13 +244,3 @@ class TabloProvider(ApsattvBaseProvider):
 
     def __init__(self):
         super().__init__('tablo')
-
-class RedboxProvider(ApsattvBaseProvider):
-    """Redbox channels"""
-    SOURCE_URL        = 'https://www.apsattv.com/redbox.m3u'
-    DEFAULT_GROUP     = 'Redbox'
-    ID_PREFIX         = 'redbox'
-    DESCRIPTION_LABEL = 'Redbox'
-
-    def __init__(self):
-        super().__init__('redbox')

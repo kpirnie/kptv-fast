@@ -181,29 +181,39 @@ class UnifiedStreamingAggregator:
         except Exception as e:
             logger.error(f"Failed to import PhiloProvider: {e}")
 
+        try:
+            from providers.roku_provider import RokuProvider
+            available_providers['roku'] = RokuProvider
+            logger.info("Successfully imported RokuProvider")
+        except Exception as e:
+            logger.error(f"Failed to import RokuProvider: {e}")
+
+        try:
+            from providers.whale_provider import WhaleTVProvider
+            available_providers['whale'] = WhaleTVProvider
+            logger.info("Successfully imported WhaleTVProvider")
+        except Exception as e:
+            logger.error(f"Failed to import WhaleTVProvider: {e}")
+
         # ── apsattv.com providers ─────────────────────────────────────────
         try:
             from providers.apsattv_provider import (
                 VizioProvider,
-                RokuProvider,
                 LocalNowProvider,
                 TCLProvider,
                 TCLPlusProvider,
                 FireTVProvider,
                 XiaomiProvider,
                 TabloProvider,
-                RedboxProvider
             )
             available_providers['vizio']    = VizioProvider
-            available_providers['roku']     = RokuProvider
             available_providers['localnow'] = LocalNowProvider
             available_providers['tcl']      = TCLProvider
             available_providers['tclplus']  = TCLPlusProvider
             available_providers['firetv']   = FireTVProvider
             available_providers['xiaomi']   = XiaomiProvider
             available_providers['tablo']   = TabloProvider
-            available_providers['redbox']   = RedboxProvider
-            logger.info("Successfully imported vizio, roku, localnow, tcl, firetv, xiaomi, tablo, redbox")
+            logger.info("Successfully imported vizio, localnow, tcl, firetv, xiaomi, tablo")
         except Exception as e:
             logger.error(f"Failed to import providers: {e}")
         

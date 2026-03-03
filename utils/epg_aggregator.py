@@ -32,6 +32,7 @@ class EPGAggregator:
             'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
             'tubi':     'https://github.com/BuddyChewChew/tubi-scraper/raw/refs/heads/main/tubi_epg.xml',
             'xumo':     'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
+            'roku':     'https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml',
             # Apsattv providers with known EPG sources
             'localnow': 'https://raw.githubusercontent.com/BuddyChewChew/localnow-playlist-generator/refs/heads/main/epg.xml',
         }

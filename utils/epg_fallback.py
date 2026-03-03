@@ -35,6 +35,7 @@ class EPGFallbackManager:
                 'samsung': 'https://i.mjh.nz/SamsungTVPlus/all.xml.gz',
                 'distrotv': 'https://i.mjh.nz/DStv/za.xml.gz',
                 'stirr': 'https://i.mjh.nz/Stirr/all.xml.gz', 
+                'roku':     'https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml',
             },
             'buddychewchew': {
                 'tubi': 'https://raw.githubusercontent.com/BuddyChewChew/tubi-scraper/main/tubi_epg.xml',
@@ -172,5 +173,7 @@ class EPGFallbackManager:
             return f"lg-{external_id}" if not external_id.startswith('lg-') else external_id
         elif provider_name == 'stirr':
             return f"stirr-{external_id}" if not external_id.startswith('stirr-') else external_id
-        
+         elif provider_name == 'roku':
+            return f"roku-{external_id}" if not external_id.startswith('roku-') else external_id
+
         return external_id

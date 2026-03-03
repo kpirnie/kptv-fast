@@ -14,16 +14,16 @@ from .git_providers import GitIptvProvider, GitFreetvProvider
 from .stirr_provider import StirrProvider
 from .apsattv_provider import (
     VizioProvider,
-    RokuProvider,
     LocalNowProvider,
     TCLProvider,
     TCLPlusProvider,
     FireTVProvider,
     XiaomiProvider,
-    TabloProvider,
-    RedboxProvider
+    TabloProvider
 )
 from providers.philo_provider import PhiloProvider
+from .roku_provider import RokuProvider
+from .whale_provider import WhaleTVProvider
 
 __all__ = [
     'BaseProvider',
@@ -38,7 +38,6 @@ __all__ = [
     'GitFreetvProvider',
     'StirrProvider',
     'VizioProvider',
-    'RokuProvider',
     'LocalNowProvider',
     'TCLProvider',
     'TCLPlusProvider',
@@ -46,5 +45,6 @@ __all__ = [
     'XiaomiProvider',
     'PhiloProvider',
     'TabloProvider',
-    'RedboxProvider',
+    'RokuProvider',
+    'WhaleTVProvider',
 ]
