@@ -1,6 +1,4 @@
-gevent==23.9.1
-flask==3.0.0
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==4.9.3
-pytz==2023.3
+gevent
+flask
+requests
+beautifulsoup4

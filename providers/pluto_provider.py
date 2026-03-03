@@ -95,7 +95,6 @@ class PlutoProvider(BaseProvider):
             
             # Set expiry for 4 hours from now
             self.session_expires_at = datetime.now().timestamp() + (4 * 3600)
-            self.logger.info(f"Got new Pluto session token for region: {self.region}")
             
             return self.session_token
             

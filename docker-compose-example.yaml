@@ -9,7 +9,7 @@ services:
     environment: 
 
       # Server configuration
-      - CACHE_DURATION=7200 # 2 hour
+      - CACHE_DURATION=7200 # 2 hours
 
       # Startup cache warming
       - WARM_CACHE_ON_STARTUP=true    # Enable startup cache warming
@@ -22,11 +22,11 @@ services:
       - PYTHONUNBUFFERED=1
 
       # Provider configuration: 
-        # all or: 
+        # all or comma-separated from:
         # xumo,tubi,pluto,plex,samsung,
         # lg,distrotv,stirr,git_freetv,git_iptv,
         # vizio,roku,localnow,tcl,tclplus,firetv,
-        # xiaomi,philo,tablo,redbox
+        # xiaomi,philo,tablo,whale
       - ENABLED_PROVIDERS=all
       
       # Provider Specific Config
@@ -40,7 +40,9 @@ services:
       - PLEX_REGION=local
       - SAMSUNG_REGION=us
       - GIT_COUNTRY=us,ca,uk,canada,usa
-      - LG_COUNTRY=us,ca,uk,gb
+      - LG_COUNTRY=us,ca,gb
+      - WHALE_COUNTRY=us         # Comma-separated ISO country codes for Whale TV+
+      - WHALE_LANG=en            # Language code for Whale TV+ metadata
 
       # Filtering (regex patterns)
       - CHANNEL_NAME_INCLUDE=
@@ -56,8 +58,8 @@ services:
 
     # healthcheck
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/status"]
+      test: ["CMD", "curl", "-v", "http://127.0.0.1:8080/status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s

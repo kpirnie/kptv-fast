@@ -17,6 +17,7 @@ import sys
 import concurrent.futures
 from flask import Flask, Response, request
 from gevent.pywsgi import WSGIServer # type: ignore
+from datetime import datetime
 
 from utils.logging_config import setup_logging, get_logger
 from utils.epg_aggregator import get_epg_aggregator
@@ -35,6 +36,7 @@ class UnifiedStreamingAggregator:
         self.channels_cache = {}
         self.cache_expiry = {}
         self.cache_lock = threading.Lock()
+        self._last_duplicates = {}
         
         # Configuration
         self.cache_duration = int(os.getenv('CACHE_DURATION', 7200))
@@ -300,18 +302,27 @@ class UnifiedStreamingAggregator:
         """Remove duplicate channels based on name and stream URL"""
         seen = set()
         unique_channels = []
-        
+        dropped = {}
+
         for channel in channels:
             key = (
                 channel.get('name', '').lower().strip(),
                 channel.get('stream_url', '')
             )
-            
+            provider = channel.get('provider', 'unknown')
+
             if key not in seen and key[0] and key[1]:
                 seen.add(key)
                 unique_channels.append(channel)
-                
-        logger.info(f"Removed {len(channels) - len(unique_channels)} duplicate channels")
+            else:
+                dropped[provider] = dropped.get(provider, 0) + 1
+
+        total_dropped = len(channels) - len(unique_channels)
+        logger.info(f"Removed {total_dropped} duplicate channels")
+        if dropped:
+            logger.debug(f"Duplicates by provider: {dropped}")
+
+        self._last_duplicates = dropped
         return unique_channels
 
     def _fetch_provider_channels(self, provider_name, provider):
@@ -539,73 +550,6 @@ class UnifiedStreamingAggregator:
             logger.error(f"Error generating debug info: {e}")
             return Response(f"Error generating debug info: {e}", status=500)
 
-    def get_status(self):
-        """Return status page"""
-        try:
-            refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
-
-            # Keep the status page responsive by using cached channels unless
-            # an explicit refresh is requested.
-            if refresh:
-                channels = self._get_all_channels()
-                channels_source = 'live refresh'
-            else:
-                with self.cache_lock:
-                    channels = list(self.channels_cache.get('all_channels', []))
-                    cache_valid = self._is_cache_valid('all_channels')
-                if cache_valid:
-                    channels_source = 'warm cache'
-                elif channels:
-                    channels_source = 'stale cache'
-                else:
-                    channels_source = 'not loaded yet'
-
-            provider_stats = {}
-            
-            for channel in channels:
-                provider = channel.get('provider', 'unknown')
-                provider_stats[provider] = provider_stats.get(provider, 0) + 1
-            
-            status_html = f"""
-            <html>
-            <head><title>KPTV FAST Streams</title><link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png" /></head>
-            <body>
-                <h1>KPTV FAST Streams</h1>
-                <h2>Status</h2>
-                <p>Total Channels: {len(channels)}</p>
-                <p>Channels Source: {channels_source}</p>
-                <p>Initialized Providers: {', '.join(self.providers.keys())}</p>
-                <p>Cache Duration: {self.cache_duration} seconds</p>
-                <p>Max Workers: {self.max_workers}</p>
-                <p>Git Country Filter: {self.git_country or 'None'}</p>
-                <h3>Provider Statistics:</h3>
-                <ul>
-            """
-            
-            for provider, count in provider_stats.items():
-                status_html += f"<li>{provider}: {count} channels</li>"
-            
-            status_html += """
-                </ul>
-                <h3>Endpoints:</h3>
-                <ul>
-                    <li><a href="/?refresh=1">Homepage Status (force refresh)</a></li>
-                    <li><a href="/playlist">M3U Playlist</a></li>
-                    <li><a href="/epg">EPG XML</a></li>
-                    <li><a href="/channels">Channels JSON</a></li>
-                    <li><a href="/debug">Debug Info (JSON)</a></li>
-                    <li><a href="/refresh">Force Refresh</a></li>
-                    <li><a href="/clear_cache">Clear Cache</a></li>
-                </ul>
-            </body>
-            </html>
-            """
-            
-            return Response(status_html, mimetype='text/html')
-        except Exception as e:
-            logger.error(f"Error generating status page: {e}")
-            return Response(f"Error generating status page: {e}", status=500)
-
     def clear_cache(self):
         """Clear all caches"""
         try:
@@ -659,6 +603,245 @@ class UnifiedStreamingAggregator:
             logger.error(f"Server error: {e}")
             raise
 
+
+    def get_status(self):
+        """Return status page"""
+        try:
+            refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
+
+            if refresh:
+                channels = self._get_all_channels()
+                channels_source = 'live refresh'
+            else:
+                with self.cache_lock:
+                    channels = list(self.channels_cache.get('all_channels', []))
+                    cache_valid = self._is_cache_valid('all_channels')
+                if cache_valid:
+                    channels_source = 'warm cache'
+                elif channels:
+                    channels_source = 'stale cache'
+                else:
+                    channels_source = 'not loaded yet'
+
+            provider_stats = {}
+            for channel in channels:
+                provider = channel.get('provider', 'unknown')
+                provider_stats[provider] = provider_stats.get(provider, 0) + 1
+
+            duplicates = getattr(self, '_last_duplicates', {})
+
+            # All providers that appear in either kept or dropped
+            all_providers = sorted(
+                set(provider_stats) | set(duplicates),
+                key=lambda p: provider_stats.get(p, 0),
+                reverse=True
+            )
+
+            def dupe_cell(p):
+                n = duplicates.get(p, 0)
+                if n == 0:
+                    return '<td class="dupes">—</td>'
+                pct = n / (provider_stats.get(p, 0) + n) * 100
+                return f'<td class="dupes warn">{n:,} <span class="pct">({pct:.0f}%)</span></td>'
+
+            provider_rows = ''.join(
+                f'<tr><td>{p}</td><td class="chcount">{provider_stats.get(p, 0):,}</td>{dupe_cell(p)}</tr>'
+                for p in all_providers
+            )
+
+            badge_class = {'warm cache': 'green', 'stale cache': 'red', 'live refresh': 'blue'}.get(channels_source, 'orange')
+
+            total_dupes = sum(duplicates.values())
+
+            status_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KPTV FAST Streams</title>
+  <link rel="icon" type="image/png" href="https://cdn.kevp.us/tv/kptv-icon.png">
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }}
+    .container {{ max-width: 900px; margin: 0 auto; }}
+    header {{ display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }}
+    header img {{ width: 48px; height: 48px; }}
+    header h1 {{ font-size: 1.6rem; color: #f0f6fc; }}
+    header p {{ color: #8b949e; font-size: 0.9rem; margin-top: 0.2rem; }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }}
+    .card {{
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1.2rem;
+      text-align: center;
+    }}
+    .card .val {{ font-size: 2rem; font-weight: 700; color: #58a6ff; line-height: 1; }}
+    .card .val.warn {{ color: #e3b341; }}
+    .card .lbl {{ font-size: 0.75rem; color: #8b949e; margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }}
+    .meta {{
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      font-size: 0.875rem;
+    }}
+    .meta span {{ color: #8b949e; }}
+    .meta strong {{ color: #c9d1d9; }}
+    .badge {{
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .badge.green  {{ background: #0d4429; color: #3fb950; }}
+    .badge.red    {{ background: #490202; color: #f85149; }}
+    .badge.blue   {{ background: #0c2d6b; color: #58a6ff; }}
+    .badge.orange {{ background: #3d2300; color: #e3b341; }}
+    section {{ margin-bottom: 2rem; }}
+    section h2 {{
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #8b949e;
+      margin-bottom: 0.75rem;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 0.875rem;
+    }}
+    thead tr {{ background: #0d1117; }}
+    th {{
+      padding: 0.6rem 1rem;
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    th.right {{ text-align: right; }}
+    td {{ padding: 0.55rem 1rem; border-top: 1px solid #21262d; }}
+    tbody tr:hover td {{ background: #1c2128; }}
+    td.chcount {{ text-align: right; color: #58a6ff; font-variant-numeric: tabular-nums; }}
+    td.dupes {{ text-align: right; color: #8b949e; font-variant-numeric: tabular-nums; }}
+    td.dupes.warn {{ color: #e3b341; }}
+    .pct {{ font-size: 0.75rem; opacity: 0.7; }}
+    .links {{ display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }}
+    .links a {{
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #58a6ff;
+      text-decoration: none;
+      padding: 0.4rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      transition: border-color 0.15s, background 0.15s;
+    }}
+    .links a:hover {{ background: #1c2128; border-color: #58a6ff; }}
+    footer {{
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #21262d;
+        text-align: center;
+        font-size: 0.8rem;
+        color: #8b949e;
+    }}
+    footer a {{ color: #58a6ff; text-decoration: none; }}
+    footer a:hover {{ text-decoration: underline; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img src="https://cdn.kevp.us/tv/kptv-icon.png" alt="KPTV">
+      <div>
+        <h1>KPTV FAST Streams</h1>
+        <p>Free Ad-Supported TV aggregator</p>
+      </div>
+    </header>
+
+    <div class="cards">
+      <div class="card">
+        <div class="val">{len(channels):,}</div>
+        <div class="lbl">Total Channels</div>
+      </div>
+      <div class="card">
+        <div class="val">{len(provider_stats)}</div>
+        <div class="lbl">Active Providers</div>
+      </div>
+      <div class="card">
+        <div class="val {'warn' if total_dupes > 0 else ''}">{total_dupes:,}</div>
+        <div class="lbl">Dupes Dropped</div>
+      </div>
+      <div class="card">
+        <div class="val">{self.cache_duration // 60}m</div>
+        <div class="lbl">Cache TTL</div>
+      </div>
+    </div>
+
+    <section>
+      <div class="links">
+        <a href="/playlist">M3U Playlist</a>
+        <a href="/epg">EPG XML</a>
+        <a href="/channels">Channels JSON</a>
+        <a href="/debug">Debug Info</a>
+        <a href="/refresh">Force Refresh</a>
+        <a href="/clear_cache">Clear Cache</a>
+        <a href="/?refresh=1">Status (live)</a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Provider Breakdown</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th class="right">Channels</th>
+            <th class="right">Dupes Dropped</th>
+          </tr>
+        </thead>
+        <tbody>{provider_rows}</tbody>
+      </table>
+    </section>
+
+    <footer>
+        Copyright &copy; 2025 <a href="https://kevinpirnie.com/" target="_blank" rel="noopener">Kevin Pirnie</a>. All rights reserved.
+    </footer>
+
+  </div>
+</body>
+</html>"""
+
+            return Response(status_html, mimetype='text/html')
+        except Exception as e:
+            logger.error(f"Error generating status page: {e}")
+            return Response(f"Error generating status page: {e}", status=500)
 
 if __name__ == '__main__':
     try:

@@ -170,6 +170,7 @@ class WhaleTVProvider:
         self.lang = os.environ.get("WHALE_LANG", "en")
 
     def get_channels(self) -> list:
+        logger.info(f"Fetching Whale TV channels with country filter: {self.countries or 'all'}")
         cache_key = f"whale_channels_{'_'.join(self.countries)}"
         if _is_cache_valid(cache_key):
             return _cache[cache_key]["data"]
@@ -182,7 +183,6 @@ class WhaleTVProvider:
         if auth_data:
             token = auth_data.get("token") or ""
             for country in self.countries:
-                logger.info("Whale: fetching channels for country=%s", country)
                 channels = _fetch_channels(session, token, self.lang, country)
                 if channels:
                     all_channels.extend(channels)

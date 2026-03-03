@@ -412,7 +412,6 @@ class PhiloProvider(BaseProvider):
 
         self.logger.info(
             f"Philo: resolving {len(channels)} stream URLs "
-            f"({self._stream_workers} workers)…"
         )
         t0 = time.time()
 

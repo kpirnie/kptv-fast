@@ -307,7 +307,7 @@ class GitIptvProvider(BaseProvider):
                         continue
             
             elapsed = time.time() - start_time
-            self.logger.info(f"Successfully processed {len(all_channels)} Git IPTV channels in {elapsed:.1f}s")
+            self.logger.info(f"Successfully processed {len(all_channels)} Git IPTV channels")
             return all_channels
             
         except Exception as e:
@@ -607,8 +607,6 @@ class GitFreetvProvider(BaseProvider):
             if not m3u_files:
                 self.logger.warning("No M3U8 files found matching country filter")
                 return []
-            
-            self.logger.info(f"Found {len(m3u_files)} M3U8 files to process")
             
             # Process M3U8 files concurrently
             all_channels = []

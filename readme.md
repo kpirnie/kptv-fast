@@ -10,7 +10,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 
 ## Features
 
-- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, DistroTV, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Redbox, Git IPTV (iptv-org), Git Free TV (Free-TV)
+- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, DistroTV, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Whale TV+, Git IPTV (iptv-org), Git Free TV (Free-TV)
 - **Unified EPG** — Aggregates external XMLTV sources into a single endpoint; no provider-specific configuration needed
 - **Concurrent Fetching** — All providers are queried in parallel via `ThreadPoolExecutor`
 - **Smart Caching** — 2-hour default cache with background pre-refresh at 75% TTL
@@ -46,7 +46,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 | Fire TV | `firetv` | ~50+ | None | None |
 | Xiaomi TV+ | `xiaomi` | ~200+ | None | None |
 | Tablo | `tablo` | ~100+ | None | None |
-| Redbox | `redbox` | ~100+ | None | None |
+| Whale TV+ | `whale` | ~100+ | None (API token) | None |
 | Git IPTV (iptv-org) | `git_iptv` | ~500–2000+ | None | None |
 | Git Free TV (Free-TV) | `git_freetv` | ~100–500+ | None | None |
 
@@ -77,6 +77,7 @@ services:
       - ENABLED_PROVIDERS=all
       - GIT_COUNTRY=us,ca,uk
       - LG_COUNTRY=us,ca,uk
+      - WHALE_COUNTRY=us
       - DEBUG=false
     restart: unless-stopped
     healthcheck:
@@ -186,6 +187,8 @@ Examples:
 | `SAMSUNG_REGION` | `us` | Any region code present in Samsung's feed, or `all` |
 | `PHILO_SESSION_ID` | `""` | Browser cookie `_session_id` from www.philo.com |
 | `PHILO_HASHED_SESSION_ID` | `""` | Browser cookie `hashed_session_id` from www.philo.com |
+| `WHALE_COUNTRY` | `us` | Comma-separated country codes for Whale TV+ (e.g. `us,gb,ca`) |
+| `WHALE_LANG` | `en` | Language code for Whale TV+ metadata |
 | `GIT_COUNTRY` | `""` | Country filter for `git_iptv` and `git_freetv` (see below) |
 | `LG_COUNTRY` | `us` | Country filter for `lg` provider (see below) |
 | `GITHUB_TOKEN` | `""` | GitHub personal access token for higher API rate limits |
@@ -198,6 +201,8 @@ Examples:
 - 3-letter codes: `usa`, `can`, `gbr`, `deu`
 - Full names: `united states`, `canada`, `united kingdom`, `germany`
 - Mixed: `us,canada,united kingdom,de`
+
+`WHALE_COUNTRY` accepts 2-letter ISO country codes only (e.g. `us`, `gb`, `ca`). Each country triggers a separate API call; channels are deduplicated by stream URL.
 
 ```yaml
 # North America
@@ -238,7 +243,7 @@ The EPG aggregator downloads and combines multiple external XMLTV sources into a
 | [BuddyChewChew/xumo-playlist-generator](https://github.com/BuddyChewChew/xumo-playlist-generator) | Xumo |
 | [BuddyChewChew/localnow-playlist-generator](https://github.com/BuddyChewChew/localnow-playlist-generator) | LocalNow |
 
-Providers not listed (Vizio, Roku, TCL, Tablo, Redbox, Xiaomi, Fire TV, Git IPTV, Git Free TV) do not have EPG data available through the aggregator.
+Providers not listed (Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+, Git IPTV, Git Free TV) do not have EPG data available through the aggregator.
 
 ---
 
@@ -260,7 +265,7 @@ Providers not listed (Vizio, Roku, TCL, Tablo, Redbox, Xiaomi, Fire TV, Git IPTV
 - **Reduce `PROVIDER_TIMEOUT`** to drop slow providers faster rather than waiting the full timeout
 - **Use `ENABLED_PROVIDERS`** to skip providers you don't need — fewer providers means faster cache builds
 - **Set `GITHUB_TOKEN`** if you enable `git_iptv` or `git_freetv` to avoid GitHub API rate limits
-- **Use country filters** (`GIT_COUNTRY`, `LG_COUNTRY`) to drastically reduce the number of M3U files fetched from Git providers
+- **Use country filters** (`GIT_COUNTRY`, `LG_COUNTRY`, `WHALE_COUNTRY`) to reduce the number of API/M3U fetches
 
 ---
 
@@ -284,9 +289,11 @@ app.py  (Flask + gevent WSGI)
   │     ├── lg_provider.py
   │     ├── stirr_provider.py
   │     ├── philo_provider.py
+  │     ├── roku_provider.py
+  │     ├── whale_provider.py
   │     ├── git_providers.py        GitIptvProvider + GitFreetvProvider
-  │     └── apsattv_provider.py     Vizio, Roku, LocalNow, TCL, TCLPlus,
-  │                                 FireTV, Xiaomi, Tablo, Redbox
+  │     └── apsattv_provider.py     Vizio, LocalNow, TCL, TCLPlus,
+  │                                 FireTV, Xiaomi, Tablo
   └── utils/
         ├── epg_aggregator.py       Downloads + merges external XMLTV
         ├── epg_fallback.py         Per-provider fallback EPG helpers
@@ -406,8 +413,9 @@ MIT License — see [LICENSE](LICENSE) for full text.
 - [@iptv-org/iptv](https://github.com/iptv-org/iptv) — Community-maintained IPTV streams
 - [@Free-TV/IPTV](https://github.com/Free-TV/IPTV) — Free TV IPTV repository
 - [epgshare01.online](https://epgshare01.online) — Multi-provider EPG aggregation
-- [apsattv.com](https://www.apsattv.com) — External M3U sources for Vizio, Roku, LG, and others
+- [apsattv.com](https://www.apsattv.com) — External M3U sources for Vizio, LG, and others
 - [i.mjh.nz](https://i.mjh.nz) — Pluto, Plex, Samsung, and Stirr EPG feeds
+- [watch.whaletvplus.com](https://watch.whaletvplus.com) — Whale TV+ free streaming
 
 ---
 
