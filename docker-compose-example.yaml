@@ -1,11 +1,11 @@
 services:
   kptv_fast:
-    # image: ghcr.io/kpirnie/kptv_fast:latest
-    image: ghcr.io/kpirnie/kptv_fast:dev
+    # image: ghcr.io/kpirnie/kptv-fast:latest
+    image: ghcr.io/kpirnie/kptv-fast:dev
     container_name: kptv_fast
     hostname: kptv_fast
     ports:
-      - 8080:8080
+      - 8080:8080 # HOST PORT:CONTAINER PORT
     environment: 
 
       # Server configuration
@@ -44,7 +44,7 @@ services:
       - WHALE_COUNTRY=us         # Comma-separated ISO country codes for Whale TV+
       - WHALE_LANG=en            # Language code for Whale TV+ metadata
 
-      # Filtering (regex patterns)
+      # Filtering (python regex patterns)
       - CHANNEL_NAME_INCLUDE=
       - CHANNEL_NAME_EXCLUDE=
       - GROUP_INCLUDE=

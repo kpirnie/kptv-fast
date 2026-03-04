@@ -68,6 +68,8 @@ WORKDIR /app
 COPY --chown=appuser:appuser app.py ./
 COPY --chown=appuser:appuser providers/ ./providers/
 COPY --chown=appuser:appuser utils/ ./utils/
+COPY --chown=appuser:appuser core/   ./core/
+COPY --chown=appuser:appuser routes/ ./routes/
 
 # Switch to non-root user
 USER appuser

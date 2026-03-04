@@ -63,10 +63,10 @@ Copy `docker-compose-example.yaml` to `docker-compose.yml` and edit as needed:
 ```yaml
 services:
   kptv_fast:
-    image: ghcr.io/kpirnie/kptv_fast:latest
+    image: ghcr.io/kpirnie/kptv-fast:latest
     container_name: kptv_fast
     ports:
-      - "8080:8080"
+      - 8080:8080
     environment:
       - CACHE_DURATION=7200
       - WARM_CACHE_ON_STARTUP=true
@@ -266,41 +266,6 @@ Providers not listed (Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+, Git I
 - **Use `ENABLED_PROVIDERS`** to skip providers you don't need — fewer providers means faster cache builds
 - **Set `GITHUB_TOKEN`** if you enable `git_iptv` or `git_freetv` to avoid GitHub API rate limits
 - **Use country filters** (`GIT_COUNTRY`, `LG_COUNTRY`, `WHALE_COUNTRY`) to reduce the number of API/M3U fetches
-
----
-
-## Architecture
-
-```
-app.py  (Flask + gevent WSGI)
-  ├── UnifiedStreamingAggregator
-  │     ├── Provider pool (concurrent ThreadPoolExecutor)
-  │     ├── Channel cache (in-memory, TTL-based)
-  │     ├── Background refresh thread
-  │     └── Startup cache warming thread
-  ├── providers/
-  │     ├── base_provider.py        BaseProvider ABC + HTTP session
-  │     ├── pluto_provider.py
-  │     ├── plex_provider.py
-  │     ├── samsung_provider.py
-  │     ├── tubi_provider.py
-  │     ├── xumo_provider.py
-  │     ├── distrotv_provider.py
-  │     ├── lg_provider.py
-  │     ├── stirr_provider.py
-  │     ├── philo_provider.py
-  │     ├── roku_provider.py
-  │     ├── whale_provider.py
-  │     ├── git_providers.py        GitIptvProvider + GitFreetvProvider
-  │     └── apsattv_provider.py     Vizio, LocalNow, TCL, TCLPlus,
-  │                                 FireTV, Xiaomi, Tablo
-  └── utils/
-        ├── epg_aggregator.py       Downloads + merges external XMLTV
-        ├── epg_fallback.py         Per-provider fallback EPG helpers
-        └── logging_config.py       DEBUG / INFO log level setup
-```
-
-Each provider inherits from `BaseProvider`, which provides connection-pooled `requests.Session` with retry logic, standard validation/normalization helpers, and consistent logging.
 
 ---
 
