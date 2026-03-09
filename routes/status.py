@@ -11,15 +11,38 @@ from flask import Blueprint, Response, request
 
 logger = logging.getLogger(__name__)
 
+# Providers that have a known EPG source in the aggregator
+_EPG_PROVIDERS = {
+    'plex', 'pluto', 'samsung', 'stirr', 'lg',
+    'distrotv', 'tubi', 'xumo', 'roku', 'localnow',
+}
+
+# SVG icons
+_ICON_M3U = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" '
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<polygon points="23 7 16 12 23 17 23 7"/>'
+    '<rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>'
+    '</svg>'
+)
+
+_ICON_EPG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" '
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>'
+    '<line x1="16" y1="2" x2="16" y2="6"/>'
+    '<line x1="8" y1="2" x2="8" y2="6"/>'
+    '<line x1="3" y1="10" x2="21" y2="10"/>'
+    '<line x1="8" y1="14" x2="8" y2="14"/>'
+    '<line x1="12" y1="14" x2="12" y2="14"/>'
+    '<line x1="16" y1="14" x2="16" y2="14"/>'
+    '<line x1="8" y1="18" x2="8" y2="18"/>'
+    '<line x1="12" y1="18" x2="12" y2="18"/>'
+    '</svg>'
+)
+
 
 def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
-    """
-    Build and return the status blueprint.
-
-    :param channel_manager:   ``ChannelManager`` instance shared across blueprints.
-    :param aggregator_config: Read-only config dict from ``UnifiedStreamingAggregator``
-                              (cache_duration, max_workers, provider_timeout, git_country, providers).
-    """
     bp = Blueprint('status', __name__)
 
     @bp.route('/')
@@ -65,11 +88,30 @@ def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
                     f'</td>'
                 )
 
+            def export_cells(p: str) -> str:
+                m3u_cell = (
+                    f'<td class="export">'
+                    f'<a href="/playlist?provider={p}" title="Download {p} M3U playlist" class="icon-link m3u">'
+                    f'{_ICON_M3U}'
+                    f'</a></td>'
+                )
+                if p in _EPG_PROVIDERS:
+                    epg_cell = (
+                        f'<td class="export">'
+                        f'<a href="/epg?provider={p}" title="Download {p} EPG" class="icon-link epg">'
+                        f'{_ICON_EPG}'
+                        f'</a></td>'
+                    )
+                else:
+                    epg_cell = '<td class="export"><span class="no-epg">&#8212;</span></td>'
+                return m3u_cell + epg_cell
+
             provider_rows = ''.join(
                 f'<tr>'
                 f'<td>{p}</td>'
                 f'<td class="chcount">{provider_stats.get(p, 0):,}</td>'
                 f'{dupe_cell(p)}'
+                f'{export_cells(p)}'
                 f'</tr>'
                 for p in all_providers
             )
@@ -126,9 +168,6 @@ def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
 
     return bp
 
-
-# ── Status page HTML template ─────────────────────────────────────────────────
-# Uses str.format() — CSS braces are escaped as {{ / }}
 
 _STATUS_TEMPLATE = """\
 <!DOCTYPE html>
@@ -196,12 +235,27 @@ _STATUS_TEMPLATE = """\
       letter-spacing: 0.04em;
     }}
     th.right {{ text-align: right; }}
+    th.center {{ text-align: center; }}
     td {{ padding: 0.55rem 1rem; border-top: 1px solid #21262d; }}
     tbody tr:hover td {{ background: #1c2128; }}
     td.chcount {{ text-align: right; color: #58a6ff; font-variant-numeric: tabular-nums; }}
     td.dupes {{ text-align: right; color: #8b949e; font-variant-numeric: tabular-nums; }}
     td.dupes.warn {{ color: #e3b341; }}
     .pct {{ font-size: 0.75rem; opacity: 0.7; }}
+    td.export {{ text-align: center; width: 48px; padding: 0.4rem 0.5rem; }}
+    .icon-link {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem;
+      border-radius: 5px;
+      transition: background 0.15s, color 0.15s;
+      color: #8b949e;
+      text-decoration: none;
+    }}
+    .icon-link.m3u:hover {{ background: #1f3a5f; color: #58a6ff; }}
+    .icon-link.epg:hover {{ background: #2a3a20; color: #56d364; }}
+    .no-epg {{ color: #30363d; font-size: 0.85rem; }}
     .links {{ display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }}
     .links a {{
       background: #161b22;
@@ -276,6 +330,8 @@ _STATUS_TEMPLATE = """\
             <th>Provider</th>
             <th class="right">Channels</th>
             <th class="right">Dupes Dropped</th>
+            <th class="center">M3U</th>
+            <th class="center">EPG</th>
           </tr>
         </thead>
         <tbody>{provider_rows}</tbody>

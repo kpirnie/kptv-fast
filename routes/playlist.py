@@ -10,6 +10,12 @@ from utils.epg_aggregator import get_epg_aggregator
 
 logger = logging.getLogger(__name__)
 
+# Providers that have a known EPG source in the aggregator
+EPG_PROVIDERS = {
+    'plex', 'pluto', 'samsung', 'stirr', 'lg',
+    'distrotv', 'tubi', 'xumo', 'roku', 'localnow',
+}
+
 
 def create_blueprint(channel_manager) -> Blueprint:
     """
@@ -22,8 +28,16 @@ def create_blueprint(channel_manager) -> Blueprint:
     @bp.route('/playlist')
     def get_playlist():
         try:
+            provider_filter = request.args.get('provider', '').strip().lower()
             channels = channel_manager.get_all_channels()
-            lines    = ['#EXTM3U']
+
+            if provider_filter:
+                channels = [
+                    ch for ch in channels
+                    if ch.get('provider', '').lower() == provider_filter
+                ]
+
+            lines = ['#EXTM3U']
 
             for ch in channels:
                 attrs = []
@@ -37,10 +51,11 @@ def create_blueprint(channel_manager) -> Blueprint:
                 extinf = '#EXTINF:-1 ' + ' '.join(attrs) + f',{ch.get("name", "Unknown")}'
                 lines.extend([extinf, ch.get('stream_url', ''), ''])
 
+            filename = f'{provider_filter}-playlist.m3u' if provider_filter else 'playlist.m3u'
             return Response(
                 '\n'.join(lines),
                 mimetype='application/vnd.apple.mpegurl',
-                headers={'Content-Disposition': 'attachment; filename=playlist.m3u'},
+                headers={'Content-Disposition': f'attachment; filename={filename}'},
             )
         except Exception as exc:
             logger.error(f"Error generating playlist: {exc}")
@@ -49,7 +64,23 @@ def create_blueprint(channel_manager) -> Blueprint:
     @bp.route('/epg')
     def get_epg():
         try:
-            aggregator = get_epg_aggregator()
+            provider_filter = request.args.get('provider', '').strip().lower()
+            aggregator      = get_epg_aggregator()
+
+            if provider_filter:
+                xml  = aggregator.get_provider_epg(provider_filter)
+                if not xml:
+                    return Response(
+                        f"No EPG data available for provider: {provider_filter}",
+                        status=404,
+                        mimetype='text/plain',
+                    )
+                return Response(
+                    xml,
+                    mimetype='application/xml',
+                    headers={'Content-Disposition': f'attachment; filename={provider_filter}-epg.xml'},
+                )
+
             if 'gzip' in request.headers.get('Accept-Encoding', ''):
                 return Response(
                     aggregator.get_combined_epg_gzipped(),
