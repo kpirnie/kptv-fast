@@ -173,7 +173,7 @@ class EPGFallbackManager:
             return f"lg-{external_id}" if not external_id.startswith('lg-') else external_id
         elif provider_name == 'stirr':
             return f"stirr-{external_id}" if not external_id.startswith('stirr-') else external_id
-         elif provider_name == 'roku':
+        elif provider_name == 'roku':
             return f"roku-{external_id}" if not external_id.startswith('roku-') else external_id
 
         return external_id
