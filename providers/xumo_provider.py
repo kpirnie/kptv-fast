@@ -235,31 +235,10 @@ class XumoProvider(BaseProvider):
             return []
     
     def _get_stream_url_fast(self, channel_id: str) -> str:
-        """Get stream URL for a channel - optimized version"""
-        # Check cache first
         if channel_id in self.stream_cache:
             return self.stream_cache[channel_id]
-        
-        try:
-            # Try direct stream URL pattern first (faster)
-            direct_url = f"https://cfd-v4-service-channel-stitcher-use1-1.prd.pluto.tv/stitch/hls/channel/{channel_id}/master.m3u8"
-            
-            # Quick check if this pattern works
-            try:
-                test_response = self.session.head(direct_url, timeout=(2, 5))
-                if test_response.status_code == 200:
-                    processed_url = self._process_stream_uri(direct_url)
-                    self.stream_cache[channel_id] = processed_url
-                    return processed_url
-            except:
-                pass
-            
-            # Fall back to API lookup (slower)
-            return self._get_stream_url_api(channel_id)
-            
-        except Exception as e:
-            self.logger.debug(f"Error getting stream URL for channel {channel_id}: {e}")
-            return ""
+        return self._get_stream_url_api(channel_id)
+
     
     def _get_stream_url_api(self, channel_id: str) -> str:
         """Get stream URL via API lookup - fallback method"""
