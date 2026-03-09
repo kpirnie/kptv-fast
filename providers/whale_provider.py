@@ -1,8 +1,5 @@
 """
 Whale TV+ Provider
-Uses the browser-based API flow discovered via HAR analysis:
-  1. GET /api/v1/auth/access?apiToken=<key>&langCode=<lang> → token + areaCode
-  2. GET /api/device/browser/v1/category/channels?langCode=<lang>&countryCode=<cc> → channels (with chlUrl)
 Fallback: apsattv.com M3U files
 """
 
@@ -13,6 +10,8 @@ import time
 from typing import Optional
 
 import requests
+
+from .base_provider import BaseProvider
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +105,6 @@ def _channels_to_m3u(channels: list, provider_name: str = "WhaleTVPlus") -> str:
         if not url:
             continue
 
-        # Build logo URL using the CDN pattern from the JS source
         if logo:
             logo_url = (
                 f"https://d3b6luslimvglo.cloudfront.net/images/79/rlaxximages/"
@@ -147,9 +145,52 @@ def _fetch_m3u_fallback(country: str) -> str:
     return ""
 
 
+# ── M3U parser (used when API falls back to .m3u files) ─────────────────────
+
+def _parse_m3u(content: str) -> list:
+    """Parse an M3U file into a list of channel dicts compatible with _channels_to_m3u."""
+    channels = []
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("#EXTINF"):
+            info = line
+            name_match = re.search(r',(.+)$', info)
+            name = name_match.group(1).strip() if name_match else "Unknown"
+
+            tvg_id   = re.search(r'tvg-id="([^"]*)"',     info)
+            tvg_logo = re.search(r'tvg-logo="([^"]*)"',   info)
+            group    = re.search(r'group-title="([^"]*)"', info)
+            tvg_chno = re.search(r'tvg-chno="([^"]*)"',   info)
+
+            url = ""
+            j = i + 1
+            while j < len(lines):
+                candidate = lines[j].strip()
+                if candidate and not candidate.startswith("#"):
+                    url = candidate
+                    i = j
+                    break
+                j += 1
+
+            if url:
+                channels.append({
+                    "chlId":            (tvg_id.group(1) if tvg_id else "").replace("whale-", ""),
+                    "chlName":          name,
+                    "chlUrl":           url,
+                    "imageIdentifier":  "",
+                    "chlNum":           tvg_chno.group(1) if tvg_chno else "",
+                    "_category":        group.group(1) if group else "Whale TV+",
+                    "_logo":            tvg_logo.group(1) if tvg_logo else "",
+                })
+        i += 1
+    return channels
+
+
 # ── Public API ──────────────────────────────────────────────────────────────
 
-class WhaleTVProvider:
+class WhaleTVProvider(BaseProvider):
     """
     Whale TV+ provider.
 
@@ -163,6 +204,7 @@ class WhaleTVProvider:
     display_name = "Whale TV+"
 
     def __init__(self):
+        super().__init__("whale")
         raw = os.environ.get("WHALE_COUNTRY", "us")
         self.countries = [c.strip().upper() for c in raw.split(",") if c.strip()]
         if not self.countries:
@@ -175,42 +217,70 @@ class WhaleTVProvider:
         if _is_cache_valid(cache_key):
             return _cache[cache_key]["data"]
 
-        all_channels = []
+        all_raw = []
         session = _make_session()
 
-        # Authenticate once
         auth_data = _auth(session, self.lang)
         if auth_data:
             token = auth_data.get("token") or ""
             for country in self.countries:
                 channels = _fetch_channels(session, token, self.lang, country)
                 if channels:
-                    all_channels.extend(channels)
+                    all_raw.extend(channels)
                 else:
                     logger.warning(
                         "Whale: no channels from API for %s, trying M3U fallback", country
                     )
                     m3u = _fetch_m3u_fallback(country)
                     if m3u:
-                        all_channels.extend(_parse_m3u(m3u))
+                        all_raw.extend(_parse_m3u(m3u))
         else:
             logger.warning("Whale: auth failed, falling back to M3U")
             for country in self.countries:
                 m3u = _fetch_m3u_fallback(country)
                 if m3u:
-                    all_channels.extend(_parse_m3u(m3u))
+                    all_raw.extend(_parse_m3u(m3u))
 
         # Deduplicate by URL
         seen = set()
         unique = []
-        for ch in all_channels:
+        for ch in all_raw:
             url = ch.get("chlUrl") or ch.get("url", "")
             if url and url not in seen:
                 seen.add(url)
                 unique.append(ch)
 
-        _cache[cache_key] = {"ts": time.time(), "data": unique}
-        return unique
+        # Normalize into the standard channel dict format
+        normalized = []
+        for ch in unique:
+            url  = ch.get("chlUrl") or ch.get("url", "")
+            name = ch.get("chlName") or ch.get("name", "")
+            cid  = ch.get("chlId", "")
+            num  = ch.get("chlNum", "")
+            cat  = ch.get("_category", "Whale TV+")
+            logo = ch.get("_logo", "")
+
+            if not logo and ch.get("imageIdentifier"):
+                logo = (
+                    f"https://d3b6luslimvglo.cloudfront.net/images/79/rlaxximages/"
+                    f"channels-rescaled/icon-white/{ch['imageIdentifier']}_white.png"
+                )
+
+            channel = {
+                "id":          f"whale-{cid}" if cid else f"whale-{name.lower().replace(' ', '-')}",
+                "name":        name,
+                "stream_url":  url,
+                "logo":        logo,
+                "group":       cat,
+                "number":      int(num) if str(num).isdigit() else None,
+                "description": f"Whale TV+: {name}",
+                "language":    "en",
+            }
+            if self.validate_channel(channel):
+                normalized.append(self.normalize_channel(channel))
+
+        _cache[cache_key] = {"ts": time.time(), "data": normalized}
+        return normalized
 
     def get_m3u(self) -> str:
         cache_key = f"whale_m3u_{'_'.join(self.countries)}"
@@ -222,52 +292,22 @@ class WhaleTVProvider:
             logger.error("Whale: no channels available")
             return "#EXTM3U\n"
 
-        # Channels may be raw API dicts or already-normalised dicts from M3U parse
-        m3u = _channels_to_m3u(channels, self.display_name)
+        # Re-map normalized dicts back to the raw format _channels_to_m3u expects
+        raw = []
+        for ch in channels:
+            raw.append({
+                "chlId":           ch.get("id", "").replace("whale-", ""),
+                "chlName":         ch.get("name", ""),
+                "chlUrl":          ch.get("stream_url", ""),
+                "imageIdentifier": "",
+                "_logo":           ch.get("logo", ""),
+                "chlNum":          ch.get("number", ""),
+                "_category":       ch.get("group", "Whale TV+"),
+            })
+
+        m3u = _channels_to_m3u(raw, self.display_name)
         _cache[cache_key] = {"ts": time.time(), "data": m3u}
         return m3u
 
-
-# ── M3U parser (used when API falls back to .m3u files) ─────────────────────
-
-def _parse_m3u(content: str) -> list:
-    """Parse an M3U file into a list of channel dicts compatible with _channels_to_m3u."""
-    channels = []
-    lines = content.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if line.startswith("#EXTINF"):
-            info = line
-            # Extract attributes
-            name_match = re.search(r',(.+)$', info)
-            name = name_match.group(1).strip() if name_match else "Unknown"
-
-            tvg_id = re.search(r'tvg-id="([^"]*)"', info)
-            tvg_logo = re.search(r'tvg-logo="([^"]*)"', info)
-            group = re.search(r'group-title="([^"]*)"', info)
-            tvg_chno = re.search(r'tvg-chno="([^"]*)"', info)
-
-            # Next non-empty line is the stream URL
-            url = ""
-            j = i + 1
-            while j < len(lines):
-                candidate = lines[j].strip()
-                if candidate and not candidate.startswith("#"):
-                    url = candidate
-                    i = j
-                    break
-                j += 1
-
-            if url:
-                channels.append({
-                    "chlId": (tvg_id.group(1) if tvg_id else "").replace("whale-", ""),
-                    "chlName": name,
-                    "chlUrl": url,
-                    "imageIdentifier": "",
-                    "chlNum": tvg_chno.group(1) if tvg_chno else "",
-                    "_category": group.group(1) if group else "Whale TV+",
-                    "_logo": tvg_logo.group(1) if tvg_logo else "",
-                })
-        i += 1
-    return channels
+    def get_epg_data(self) -> dict:
+        return {}
