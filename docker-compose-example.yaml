@@ -30,8 +30,8 @@ services:
       - ENABLED_PROVIDERS=all
       
       # Provider Specific Config
-      - PLUTO_USERNAME=
-      - PLUTO_PASSWORD=
+      - PLUTO_USERNAME= #required to use Pluto
+      - PLUTO_PASSWORD= #required to use Pluto
       - PHILO_SESSION_ID=
       - PHILO_HASHED_SESSION_ID=
 
