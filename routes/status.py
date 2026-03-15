@@ -91,14 +91,14 @@ def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
             def export_cells(p: str) -> str:
                 m3u_cell = (
                     f'<td class="export">'
-                    f'<a href="/playlist?provider={p}" title="Download {p} M3U playlist" class="icon-link m3u">'
+                    f'<a href="/playlist?provider={p}" title="Download {p} M3U playlist" class="icon-link m3u" target="_blank">'
                     f'{_ICON_M3U}'
                     f'</a></td>'
                 )
                 if p in _EPG_PROVIDERS:
                     epg_cell = (
                         f'<td class="export">'
-                        f'<a href="/epg?provider={p}" title="Download {p} EPG" class="icon-link epg">'
+                        f'<a href="/epg?provider={p}" title="Download {p} EPG" class="icon-link epg" target="_blank">'
                         f'{_ICON_EPG}'
                         f'</a></td>'
                     )
@@ -312,10 +312,10 @@ _STATUS_TEMPLATE = """\
 
     <section>
       <div class="links">
-        <a href="/playlist">M3U Playlist</a>
-        <a href="/epg">EPG XML</a>
-        <a href="/channels">Channels JSON</a>
-        <a href="/debug">Debug Info</a>
+        <a href="/playlist" target="_blank">M3U Playlist</a>
+        <a href="/epg" target="_blank">EPG XML</a>
+        <a href="/channels" target="_blank">Channels JSON</a>
+        <a href="/debug" target="_blank">Debug Info</a>
         <a href="/refresh">Force Refresh</a>
         <a href="/clear_cache">Clear Cache</a>
         <a href="/?refresh=1">Status (live)</a>
