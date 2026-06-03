@@ -4,8 +4,8 @@
 [![Build Develop](https://img.shields.io/github/actions/workflow/status/kpirnie/kptv-fast/docker-build.yml?branch=develop&logoColor=white&label=Develop&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/kptv-fast/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Adevelop)
 [![GitHub Issues](https://img.shields.io/github/issues/kpirnie/kptv-fast?style=for-the-badge&logo=github&color=006400&logoColor=white&labelColor=000)](https://github.com/kpirnie/kptv-fast/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/kpirnie/kptv-fast?style=for-the-badge&labelColor=000)](https://github.com/kpirnie/kptv-fast/commits/main)
-[![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=000)](LICENSE)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=000)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white&style=for-the-badge&labelColor=000)](https://python.org)
 [![Alpine](https://img.shields.io/badge/Base-Alpine%20Linux-0D597F?logo=alpinelinux&logoColor=white&style=for-the-badge&labelColor=000)](https://www.alpinelinux.org/)
 [![Discord](https://img.shields.io/badge/Discord-Join-blue?logo=discord&logoColor=white&style=for-the-badge&labelColor=000)](https://discord.gg/bd4Qan3PaN)
