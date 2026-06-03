@@ -1,5 +1,17 @@
 # KPTV FAST Streams
 
+[![Build Main](https://img.shields.io/github/actions/workflow/status/kpirnie/kptv-fast/build.yml?branch=main&label=Main&logoColor=white&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/kptv-fast/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Amain)
+[![Build Develop](https://img.shields.io/github/actions/workflow/status/kpirnie/kptv-fast/build.yml?branch=develop&logoColor=white&label=Develop&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/kptv-fast/actions?query=workflow%3A%22Build+and+Push+Docker+Image%22+branch%3Adevelop)
+[![GitHub Issues](https://img.shields.io/github/issues/kpirnie/kptv-fast?style=for-the-badge&logo=github&color=006400&logoColor=white&labelColor=000)](https://github.com/kpirnie/kptv-fast/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/kpirnie/kptv-fast?style=for-the-badge&labelColor=000)](https://github.com/kpirnie/kptv-fast/commits/main)
+[![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=000)](LICENSE)
+
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white&style=for-the-badge&labelColor=000)](https://python.org)
+[![Alpine](https://img.shields.io/badge/Base-Alpine%20Linux-0D597F?logo=alpinelinux&logoColor=white&style=for-the-badge&labelColor=000)](https://www.alpinelinux.org/)
+[![Discord](https://img.shields.io/badge/Discord-Join-blue?logo=discord&logoColor=white&style=for-the-badge&labelColor=000)](https://discord.gg/bd4Qan3PaN)
+[![Kevin Pirnie](https://img.shields.io/badge/-KevinPirnie.com-000d2d?style=for-the-badge&labelColor=000&logoColor=white&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4KICA8ZWxsaXBzZSBjeD0iMTIiIGN5PSIxMiIgcng9IjQuNSIgcnk9IjEwIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxMiIgeDI9IjIyIiB5Mj0iMTIiLz4KICA8bGluZSB4MT0iNC41IiB5MT0iNi41IiB4Mj0iMTkuNSIgeTI9IjYuNSIvPgogIDxsaW5lIHgxPSI0LjUiIHkxPSIxNy41IiB4Mj0iMTkuNSIgeTI9IjE3LjUiLz4KPC9zdmc+Cg==)](https://kevinpirnie.com/)
+
+
 A high-performance streaming service aggregator that combines multiple free streaming platforms into a single M3U playlist and EPG. Perfect for use with Channels DVR, Plex, Jellyfin, or any IPTV client.
 
 ## Overview
@@ -110,7 +122,7 @@ DEBUG=true GIT_COUNTRY=us,ca LG_COUNTRY=us,ca python app.py
 | `GET /` or `GET /status` | HTML status page with per-provider stats and cache info |
 | `GET /playlist` | M3U8 playlist of all channels |
 | `GET /epg` | Combined XMLTV EPG (plain XML) |
-| `GET /epg` *(with `Accept-Encoding: gzip`)* | Combined XMLTV EPG (gzip-compressed) |
+| `GET /epg-gz` | Combined XMLTV EPG (gzip-compressed) |
 | `GET /channels` | All channels as JSON |
 | `GET /debug` | Debug JSON with provider stats, cache status, and runtime info |
 | `GET /refresh` | Force-clear cache and re-fetch all channels |
@@ -233,7 +245,7 @@ Cookies expire periodically — update them if Philo channels stop loading.
 
 ## EPG System
 
-The EPG aggregator downloads and combines multiple external XMLTV sources into a single `/epg` endpoint. Sources are fetched concurrently, deduplicated by channel ID, and cached for one hour.
+The EPG aggregator downloads and combines multiple external XMLTV sources into a single `/epg` or `/epg-gz` endpoint. Sources are fetched concurrently, deduplicated by channel ID, and cached for one hour.
 
 | Source | Providers Covered |
 |---|---|
