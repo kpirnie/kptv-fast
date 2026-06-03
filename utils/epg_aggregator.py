@@ -200,6 +200,35 @@ class EPGAggregator:
 
         return provider_xml
 
+    def get_provider_epg_gz(self, provider_name: str) -> bytes:
+        """
+        Return a single-provider XMLTV as gzip-compressed bytes.
+        Reuses the per-provider cache, compressing on first call.
+        """
+        provider_name = provider_name.lower().strip()
+
+        # Check compressed provider cache
+        gz_key = f"{provider_name}_gz"
+        with self.cache_lock:
+            if (
+                gz_key in self._provider_cache
+                and time.time() < self._provider_expiry.get(gz_key, 0)
+            ):
+                return self._provider_cache[gz_key]
+
+        # Fetch/reuse plain XML then compress
+        xml = self.get_provider_epg(provider_name)
+        if not xml:
+            return b""
+
+        gz = gzip.compress(xml.encode('utf-8'))
+
+        with self.cache_lock:
+            self._provider_cache[gz_key]  = gz
+            self._provider_expiry[gz_key] = time.time() + self.cache_duration
+
+        return gz
+
     def clear_cache(self) -> None:
         """Clear all EPG caches (combined and per-provider)."""
         with self.cache_lock:

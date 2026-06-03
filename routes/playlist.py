@@ -41,7 +41,12 @@ def create_blueprint(channel_manager) -> Blueprint:
 
             for ch in channels:
                 attrs = []
-                if ch.get('id'):             attrs.append(f'tvg-id="{ch["id"]}"')
+                # Strip provider prefix from tvg-id (e.g. "samsung-" from "samsung-US390001557")
+                ch_id    = ch.get('id', '')
+                provider = ch.get('provider', '')
+                if provider and ch_id.startswith(f'{provider}-'):
+                    ch_id = ch_id[len(provider) + 1:]
+                if ch_id: attrs.append(f'tvg-id="{ch_id}"')
                 if ch.get('name'):           attrs.append(f'tvg-name="{ch["name"]}"')
                 if ch.get('logo'):           attrs.append(f'tvg-logo="{ch["logo"]}"')
                 if ch.get('group'):          attrs.append(f'group-title="{ch["group"]}"')
@@ -68,7 +73,7 @@ def create_blueprint(channel_manager) -> Blueprint:
             aggregator      = get_epg_aggregator()
 
             if provider_filter:
-                xml  = aggregator.get_provider_epg(provider_filter)
+                xml = aggregator.get_provider_epg(provider_filter)
                 if not xml:
                     return Response(
                         f"No EPG data available for provider: {provider_filter}",
@@ -81,15 +86,6 @@ def create_blueprint(channel_manager) -> Blueprint:
                     headers={'Content-Disposition': f'attachment; filename={provider_filter}-epg.xml'},
                 )
 
-            if 'gzip' in request.headers.get('Accept-Encoding', ''):
-                return Response(
-                    aggregator.get_combined_epg_gzipped(),
-                    mimetype='application/xml',
-                    headers={
-                        'Content-Encoding': 'gzip',
-                        'Content-Disposition': 'attachment; filename=epg.xml.gz',
-                    },
-                )
             return Response(
                 aggregator.get_combined_epg(),
                 mimetype='application/xml',
@@ -98,6 +94,41 @@ def create_blueprint(channel_manager) -> Blueprint:
         except Exception as exc:
             logger.error(f"Error generating EPG: {exc}")
             return Response(f"Error generating EPG: {exc}", status=500)
+
+    @bp.route('/epg-gz')
+    def get_epg_gz():
+        try:
+            provider_filter = request.args.get('provider', '').strip().lower()
+            aggregator      = get_epg_aggregator()
+
+            if provider_filter:
+                gz = aggregator.get_provider_epg_gz(provider_filter)
+                if not gz:
+                    return Response(
+                        f"No EPG data available for provider: {provider_filter}",
+                        status=404,
+                        mimetype='text/plain',
+                    )
+                return Response(
+                    gz,
+                    mimetype='application/xml',
+                    headers={
+                        'Content-Encoding': 'gzip',
+                        'Content-Disposition': f'attachment; filename={provider_filter}-epg.xml.gz',
+                    },
+                )
+
+            return Response(
+                aggregator.get_combined_epg_gzipped(),
+                mimetype='application/xml',
+                headers={
+                    'Content-Encoding': 'gzip',
+                    'Content-Disposition': 'attachment; filename=epg.xml.gz',
+                },
+            )
+        except Exception as exc:
+            logger.error(f"Error generating gzipped EPG: {exc}")
+            return Response(f"Error generating gzipped EPG: {exc}", status=500)
 
     @bp.route('/channels')
     def get_channels_json():

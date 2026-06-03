@@ -314,6 +314,7 @@ _STATUS_TEMPLATE = """\
       <div class="links">
         <a href="/playlist" target="_blank">M3U Playlist</a>
         <a href="/epg" target="_blank">EPG XML</a>
+        <a href="/epg-gz" target="_blank">EPG XML (GZ)</a>
         <a href="/channels" target="_blank">Channels JSON</a>
         <a href="/debug" target="_blank">Debug Info</a>
         <a href="/refresh">Force Refresh</a>
