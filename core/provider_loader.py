@@ -19,17 +19,9 @@ def load_providers(enabled_providers: list) -> dict:
 
     # Single-class providers: (key, dotted.module.path, ClassName)
     _single = [
-        ('xumo',      'providers.xumo_provider',     'XumoProvider'),
-        ('tubi',      'providers.tubi_provider',     'TubiProvider'),
+        
         ('pluto',     'providers.pluto_provider',    'PlutoProvider'),
-        ('plex',      'providers.plex_provider',     'PlexProvider'),
-        ('samsung',   'providers.samsung_provider',  'SamsungProvider'),
-        ('distrotv',  'providers.distrotv_provider', 'DistroTVProvider'),
-        ('lg',        'providers.lg_provider',       'LGProvider'),
-        ('stirr',     'providers.stirr_provider',    'StirrProvider'),
-        ('philo',     'providers.philo_provider',    'PhiloProvider'),
-        ('roku',      'providers.roku_provider',     'RokuProvider'),
-        ('whale',     'providers.whale_provider',    'WhaleTVProvider'),
+        
     ]
 
     for key, module_path, class_name in _single:
