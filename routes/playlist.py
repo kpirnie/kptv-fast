@@ -111,20 +111,14 @@ def create_blueprint(channel_manager) -> Blueprint:
                     )
                 return Response(
                     gz,
-                    mimetype='application/xml',
-                    headers={
-                        'Content-Encoding': 'gzip',
-                        'Content-Disposition': f'attachment; filename={provider_filter}-epg.xml.gz',
-                    },
+                    mimetype='application/gzip',
+                    headers={'Content-Disposition': f'attachment; filename={provider_filter}-epg.xml.gz'},
                 )
 
             return Response(
                 aggregator.get_combined_epg_gzipped(),
-                mimetype='application/xml',
-                headers={
-                    'Content-Encoding': 'gzip',
-                    'Content-Disposition': 'attachment; filename=epg.xml.gz',
-                },
+                mimetype='application/gzip',
+                headers={'Content-Disposition': 'attachment; filename=epg.xml.gz'},
             )
         except Exception as exc:
             logger.error(f"Error generating gzipped EPG: {exc}")
