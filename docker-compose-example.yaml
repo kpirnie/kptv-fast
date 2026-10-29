@@ -42,7 +42,10 @@ services:
       - GIT_COUNTRY=us,ca,uk,canada,usa
       - LG_COUNTRY=us,ca,gb
       - WHALE_COUNTRY=us         # Comma-separated ISO country codes for Whale TV+
-      - WHALE_LANG=en            # Language code for Whale TV+ metadata
+      - WHALE_LANG=en            # Language code for Whale TV+ metadata 
+      - TCLPLUS_COUNTRY=us       # Comma-separated: us, ca
+      - LOCALNOW_DMA=            # Optional DMA override (auto-detected from server IP)
+      - LOCALNOW_MARKET=         # Optional market override, e.g. ohColumbus,pbs-wosu
 
       # Filtering (python regex patterns)
       - CHANNEL_NAME_INCLUDE=

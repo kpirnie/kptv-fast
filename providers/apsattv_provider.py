@@ -179,16 +179,6 @@ class ApsattvBaseProvider(BaseProvider):
 # Individual provider classes — one per apsattv.com source
 # ---------------------------------------------------------------------------
 
-class LocalNowProvider(ApsattvBaseProvider):
-    """Local Now channels"""
-    SOURCE_URL        = 'https://www.apsattv.com/localnow.m3u'
-    DEFAULT_GROUP     = 'Local Now'
-    ID_PREFIX         = 'localnow'
-    DESCRIPTION_LABEL = 'Local Now'
-
-    def __init__(self):
-        super().__init__('localnow')
-
 class TCLProvider(ApsattvBaseProvider):
     """TCL TV channels"""
     SOURCE_URL        = 'https://www.apsattv.com/tcl.m3u'

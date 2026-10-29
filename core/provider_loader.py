@@ -31,6 +31,7 @@ def load_providers(enabled_providers: list) -> dict:
         ('whale',     'providers.whale_provider',    'WhaleTVProvider'),
         ('vizio',     'providers.vizio_provider',    'VizioProvider'),
         ('tclplus',   'providers.tclplus_provider',  'TCLPlusProvider'),
+        ('localnow',  'providers.localnow_provider', 'LocalNowProvider'),
     ]
 
     for key, module_path, class_name in _single:
@@ -53,20 +54,18 @@ def load_providers(enabled_providers: list) -> dict:
     # Apsattv bundle — multiple classes in one module
     try:
         from providers.apsattv_provider import (
-            LocalNowProvider,
             TCLProvider,
             FireTVProvider,
             XiaomiProvider,
             TabloProvider,
         )
         available.update({
-            'localnow': LocalNowProvider,
             'tcl':      TCLProvider,
             'firetv':   FireTVProvider,
             'xiaomi':   XiaomiProvider,
             'tablo':    TabloProvider,
         })
-        logger.info("Imported apsattv providers (localnow, tcl, firetv, xiaomi, tablo)")
+        logger.info("Imported apsattv providers (tcl, firetv, xiaomi, tablo)")
     except Exception as exc:
         logger.error(f"Failed to import apsattv providers: {exc}")
 
