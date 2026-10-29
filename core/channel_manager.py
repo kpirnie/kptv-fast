@@ -4,7 +4,7 @@ Channel cache, concurrent fetching, filtering, and deduplication.
 
 import os
 import re
-import signal
+import gevent  # type: ignore
 import time
 import threading
 import traceback
@@ -120,26 +120,17 @@ class ChannelManager:
         return all_channels
 
     def _fetch_provider_channels(self, provider_name: str, provider) -> list:
-        """Fetch channels from a single provider with a hard SIGALRM timeout."""
+        """Fetch channels from a single provider with a per-greenlet timeout."""
         try:
             if self.debug_mode:
                 logger.debug(f"Fetching channels from {provider_name}")
 
             start = time.time()
 
-            def _timeout_handler(signum, frame):
-                raise TimeoutError(f"{provider_name} timed out")
-
             result: list = []
             try:
-                if hasattr(signal, 'SIGALRM'):
-                    signal.signal(signal.SIGALRM, _timeout_handler)
-                    signal.alarm(self.provider_timeout)
-
-                result = provider.get_channels()
-
-                if hasattr(signal, 'SIGALRM'):
-                    signal.alarm(0)
+                with gevent.Timeout(self.provider_timeout, TimeoutError(f"{provider_name} timed out")):
+                    result = provider.get_channels()
 
             except TimeoutError:
                 logger.warning(f"⏰ {provider_name} timed out after {self.provider_timeout}s")
