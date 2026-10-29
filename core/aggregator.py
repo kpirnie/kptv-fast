@@ -7,6 +7,8 @@ and the gevent WSGI server.
 
 import os
 import logging
+import threading
+import time
 from flask import Flask
 from gevent.pywsgi import WSGIServer  # type: ignore
 
@@ -15,6 +17,7 @@ from core.channel_manager import ChannelManager
 from routes.playlist import create_blueprint as playlist_blueprint
 from routes.status   import create_blueprint as status_blueprint
 from routes.admin    import create_blueprint as admin_blueprint
+from utils.epg_aggregator import get_epg_aggregator
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ class UnifiedStreamingAggregator:
         self.enabled_providers = [p.strip() for p in enabled_raw.split(',')]
 
         warm_on_startup = os.getenv('WARM_CACHE_ON_STARTUP', 'true').lower() == 'true'
+        warm_epg        = os.getenv('WARM_EPG_ON_STARTUP',   'true').lower() == 'true'
         debug_mode      = os.getenv('DEBUG', 'false').lower() == 'true'
 
         # ── Providers ─────────────────────────────────────────────────────────
@@ -65,7 +69,24 @@ class UnifiedStreamingAggregator:
         # ── Optional startup cache warming ───────────────────────────────────
         if warm_on_startup:
             self.channel_manager.warm_cache(self.startup_delay)
+        if warm_epg:
+            self._warm_epg(self.startup_delay)
 
+    def _warm_epg(self, startup_delay: int) -> None:
+        """Pre-build the combined EPG cache in a daemon thread."""
+        def _warmer():
+            try:
+                if startup_delay > 0:
+                    time.sleep(startup_delay)
+                logger.info("🔥 Warming EPG cache…")
+                t = time.time()
+                get_epg_aggregator().get_combined_epg()
+                logger.info(f"✅ EPG cache warm in {time.time() - t:.1f}s")
+            except Exception as exc:
+                logger.error(f"❌ EPG warming failed: {exc}")
+
+        threading.Thread(target=_warmer, daemon=True, name='epg-cache-warmer').start()
+        
     def _register_blueprints(self) -> None:
         """Register all route blueprints on the Flask app."""
         self.app.register_blueprint(playlist_blueprint(self.channel_manager))
