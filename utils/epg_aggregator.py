@@ -22,6 +22,8 @@ class EPGAggregator:
         self.cache_gz     = None
         self.cache_expiry = 0
         self.cache_lock   = threading.Lock()
+        self._build_lock  = threading.Lock()
+        self.fetch_workers = 4  # concurrent source downloads
         self.cache_duration = 3600  # 1 hour
 
         # Per-provider cache: provider_name → xml string
@@ -109,52 +111,61 @@ class EPGAggregator:
                 logger.debug("Returning cached EPG")
                 return self.cache
 
-        logger.info("Building combined EPG...")
-        start_time = time.time()
+        with self._build_lock:
 
-        all_channels   = []
-        all_programmes = []
-        seen_channel_ids: set = set()
+            # Another caller may have finished a build while we waited
+            with self.cache_lock:
+                if not force_refresh and self.cache and time.time() < self.cache_expiry:
+                    return self.cache
 
-        # Fetch all sources concurrently, then process in source order so dedup stays deterministic
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.epg_sources)) as executor:
-            futures = {
-                name: executor.submit(self._fetch_source, name, url)
-                for name, url in self.epg_sources.items()
-            }
+            logger.info("Building combined EPG...")
+            start_time = time.time()
 
-        for name, future in futures.items():
-            xml_text = future.result()
-            if not xml_text:
-                continue
+            # Fetch + extract inside the worker so each raw XML string is released as soon as it's parsed
+            def _fetch_and_extract(name: str, url: str) -> tuple:
+                return self._extract_content(self._fetch_source(name, url))
 
-            channels, programmes = self._extract_content(xml_text)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.fetch_workers) as executor:
+                futures = {
+                    name: executor.submit(_fetch_and_extract, name, url)
+                    for name, url in self.epg_sources.items()
+                }
 
-            for ch in channels:
-                id_match = re.search(r'id="([^"]+)"', ch)
-                if id_match:
-                    ch_id = id_match.group(1)
-                    if ch_id not in seen_channel_ids:
-                        seen_channel_ids.add(ch_id)
-                        all_channels.append(ch)
+            all_channels   = []
+            all_programmes = []
+            seen_channel_ids: set = set()
 
-            all_programmes.extend(programmes)
-            logger.info(f"  {name}: {len(channels)} channels, {len(programmes)} programmes")
+            # Merge in source order so dedup stays deterministic
+            for name in list(futures):
+                channels, programmes = futures.pop(name).result()
+                if not channels and not programmes:
+                    continue
 
-        combined_xml = self._build_xml(all_channels, all_programmes)
-        elapsed      = time.time() - start_time
+                for ch in channels:
+                    id_match = re.search(r'id="([^"]+)"', ch)
+                    if id_match:
+                        ch_id = id_match.group(1)
+                        if ch_id not in seen_channel_ids:
+                            seen_channel_ids.add(ch_id)
+                            all_channels.append(ch)
 
-        logger.info(
-            f"Combined EPG: {len(all_channels)} channels, "
-            f"{len(all_programmes)} programmes in {elapsed:.1f}s"
-        )
+                all_programmes.extend(programmes)
+                logger.info(f"  {name}: {len(channels)} channels, {len(programmes)} programmes")
 
-        with self.cache_lock:
-            self.cache        = combined_xml
-            self.cache_gz     = gzip.compress(combined_xml.encode('utf-8'))
-            self.cache_expiry = time.time() + self.cache_duration
+            combined_xml = self._build_xml(all_channels, all_programmes)
+            elapsed      = time.time() - start_time
 
-        return combined_xml
+            logger.info(
+                f"Combined EPG: {len(all_channels)} channels, "
+                f"{len(all_programmes)} programmes in {elapsed:.1f}s"
+            )
+
+            with self.cache_lock:
+                self.cache        = combined_xml
+                self.cache_gz     = gzip.compress(combined_xml.encode('utf-8'))
+                self.cache_expiry = time.time() + self.cache_duration
+
+            return combined_xml
 
     def get_combined_epg_gzipped(self, force_refresh: bool = False) -> bytes:
         """Return combined XMLTV as gzip-compressed bytes."""
