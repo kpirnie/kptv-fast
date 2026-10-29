@@ -115,6 +115,10 @@ class DistroTVProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Error fetching DistroTV channels: {e}")
             return []
+
+    def clear_cache(self) -> None:
+        """Expire the feed cache"""
+        self.feed_cache_time = 0
     
     def get_epg_data(self):
         """EPG handled by aggregator"""

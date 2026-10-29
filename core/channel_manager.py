@@ -50,10 +50,16 @@ class ChannelManager:
         return key in self._cache_expiry and time.time() < self._cache_expiry[key]
 
     def clear_cache(self) -> None:
-        """Evict all channel cache entries."""
+        """Evict all channel cache entries and expire provider-level caches."""
         with self._cache_lock:
             self._channels_cache.clear()
             self._cache_expiry.clear()
+
+        for name, prov in self.providers.items():
+            try:
+                prov.clear_cache()
+            except Exception as exc:
+                logger.error(f"Error clearing {name} cache: {exc}")
 
     def get_cached_channels(self) -> list:
         """Return the cached channel list without triggering a refresh."""

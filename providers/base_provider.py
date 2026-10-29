@@ -81,6 +81,10 @@ class BaseProvider(ABC):
         """Get EPG data for channels"""
         pass
     
+    def clear_cache(self) -> None:
+        """Expire any provider-level caches so the next fetch hits upstream"""
+        pass
+    
     def validate_channel(self, channel: Dict[str, Any]) -> bool:
         """Validate that a channel has required fields"""
         try:

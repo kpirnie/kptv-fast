@@ -258,5 +258,8 @@ class RokuProvider(BaseProvider):
 
         return channels
 
+    def clear_cache(self) -> None:
+        self._cache_expiry = 0
+        
     def get_epg_data(self) -> Dict:
         return {}

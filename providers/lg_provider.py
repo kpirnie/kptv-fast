@@ -319,6 +319,10 @@ class LGProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Error fetching LG channels: {e}")
             return []
+
+    def clear_cache(self) -> None:
+        """Expire the channel cache"""
+        self.cache_expiry = 0
     
     def get_epg_data(self):
         """EPG handled by aggregator"""

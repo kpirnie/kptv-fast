@@ -166,6 +166,10 @@ class ApsattvBaseProvider(BaseProvider):
             self.logger.error(f"Error fetching {self.name} channels: {e}")
             return []
 
+    def clear_cache(self) -> None:
+        """Expire the channel cache."""
+        self._cache_expiry = 0
+
     def get_epg_data(self):
         """EPG handled by aggregator."""
         return {}

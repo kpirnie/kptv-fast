@@ -324,6 +324,10 @@ class StirrProvider(BaseProvider):
             self.logger.error(f"Error fetching Stirr channels: {e}")
             return []
 
+    def clear_cache(self) -> None:
+        """Expire the channel cache"""
+        self.channels_cache_time = 0
+
     def get_epg_data(self):
         """EPG handled by aggregator"""
         return {}

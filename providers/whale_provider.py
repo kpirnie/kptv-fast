@@ -309,5 +309,9 @@ class WhaleTVProvider(BaseProvider):
         _cache[cache_key] = {"ts": time.time(), "data": m3u}
         return m3u
 
+    def clear_cache(self) -> None:
+        for entry in _cache.values():
+            entry["ts"] = 0
+            
     def get_epg_data(self) -> dict:
         return {}

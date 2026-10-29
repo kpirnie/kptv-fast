@@ -540,6 +540,10 @@ class PhiloProvider(BaseProvider):
 
         return out
 
+    def clear_cache(self) -> None:
+        """Expire channel metadata so the next fetch re-resolves all stream URLs."""
+        self._channel_cache_expiry = 0.0
+        
     def get_epg_data(self) -> Dict:
         """EPG not implemented (would require additional Philo API calls)."""
         return {}

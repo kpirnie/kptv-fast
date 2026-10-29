@@ -311,6 +311,10 @@ class XumoProvider(BaseProvider):
         if hasattr(self, 'session'):
             self.session.close()
 
+    def clear_cache(self) -> None:
+        """Drop resolved stream URLs"""
+        self.stream_cache = {}
+
     def get_epg_data(self):
         """EPG handled by aggregator"""
         return {}
