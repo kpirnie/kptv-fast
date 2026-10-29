@@ -18,7 +18,7 @@ services:
       
       # Performance
       - MAX_WORKERS=5           # Concurrent provider fetches (default: 5)
-      - PROVIDER_TIMEOUT=60     # Per-provider timeout in seconds (default: 60)
+      - PROVIDER_TIMEOUT=60     # Per-provider timeout in seconds (default: 45)
       - PYTHONUNBUFFERED=1
 
       # Provider configuration: 
@@ -30,8 +30,6 @@ services:
       - ENABLED_PROVIDERS=all
       
       # Provider Specific Config
-      - PLUTO_USERNAME= #required to use Pluto
-      - PLUTO_PASSWORD= #required to use Pluto
       - PHILO_SESSION_ID=
       - PHILO_HASHED_SESSION_ID=
 
