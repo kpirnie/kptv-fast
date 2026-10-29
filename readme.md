@@ -11,7 +11,6 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-blue?logo=discord&logoColor=white&style=for-the-badge&labelColor=000)](https://discord.gg/bd4Qan3PaN)
 [![Kevin Pirnie](https://img.shields.io/badge/-KevinPirnie.com-000d2d?style=for-the-badge&labelColor=000&logoColor=white&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4KICA8ZWxsaXBzZSBjeD0iMTIiIGN5PSIxMiIgcng9IjQuNSIgcnk9IjEwIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxMiIgeDI9IjIyIiB5Mj0iMTIiLz4KICA8bGluZSB4MT0iNC41IiB5MT0iNi41IiB4Mj0iMTkuNSIgeTI9IjYuNSIvPgogIDxsaW5lIHgxPSI0LjUiIHkxPSIxNy41IiB4Mj0iMTkuNSIgeTI9IjE3LjUiLz4KPC9zdmc+Cg==)](https://kevinpirnie.com/)
 
-
 A high-performance streaming service aggregator that combines multiple free streaming platforms into a single M3U playlist and EPG. Perfect for use with Channels DVR, Plex, Jellyfin, or any IPTV client.
 
 ## Overview
@@ -356,7 +355,7 @@ The Dockerfile uses a two-stage Alpine build. The builder stage compiles Python 
 1. Create `providers/your_provider.py` inheriting from `BaseProvider`
 2. Implement `get_channels() -> List[Dict]` and `get_epg_data() -> Dict`
 3. Return channel dicts with at minimum `id`, `name`, `stream_url`; optionally `logo`, `group`, `number`, `description`, `language`
-4. Register the class in `app.py` inside `_init_providers()`
+4. Register the class in `core/provider_loader.py` inside `load_providers()` (add a `(key, module_path, ClassName)` entry to `_single`)
 5. Add the key to `ENABLED_PROVIDERS` docs and the provider table above
 6. Test with `DEBUG=true python app.py`
 
