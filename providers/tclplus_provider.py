@@ -57,7 +57,11 @@ class TCLPlusProvider(BaseProvider):
     def _get_json(self, path: str, params: Dict[str, Any]) -> Dict:
         r = self.make_request('GET', f"{self.BASE_URL}{path}", headers=self.headers, params=params)
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        if not isinstance(data, dict):
+            self.logger.debug(f"TCL TV+: non-object response from {path}: {str(data)[:200]}")
+            return {}
+        return data
 
     def _fix_url(self, url: Optional[str]) -> str:
         if not url:
@@ -75,7 +79,9 @@ class TCLPlusProvider(BaseProvider):
                 self.logger.error(f"TCL TV+: livetab request failed for {country}: {e}")
                 continue
 
-            for cat in livetab.get('lines', []):
+            for cat in livetab.get('lines') or []:
+                if not isinstance(cat, dict):
+                    continue
                 cat_id   = cat.get('id')
                 cat_name = cat.get('name') or 'TCL TV+'
                 if cat_id is None:
@@ -89,7 +95,9 @@ class TCLPlusProvider(BaseProvider):
                     self.logger.warning(f"TCL TV+: category {cat_name} failed: {e}")
                     continue
 
-                for ch in payload.get('channels', []):
+                for ch in payload.get('channels') or []:
+                    if not isinstance(ch, dict):
+                        continue
                     bundle_id = str(ch.get('bundle_id') or ch.get('id') or '')
                     name      = (ch.get('name') or '').strip()
                     media     = ch.get('media') or ''
