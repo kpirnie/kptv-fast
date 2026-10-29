@@ -46,7 +46,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 | Tubi | `tubi` | ~50+ | None | BuddyChewChew repo |
 | Xumo | `xumo` | ~85 | None | BuddyChewChew repo |
 | LG Channels | `lg` | ~100–500+ | None | EPGShare01 |
-| Stirr | `stirr` | ~140+ | None | i.mjh.nz |
+| Stirr | `stirr` | ~140+ | None | None |
 | Philo | `philo` | ~110+ | Session cookies | None |
 | Vizio WatchFree+ | `vizio` | ~300+ | None | None |
 | The Roku Channel | `roku` | ~300+ | None | None |
@@ -247,13 +247,13 @@ The EPG aggregator downloads and combines multiple external XMLTV sources into a
 
 | Source | Providers Covered |
 |---|---|
-| [i.mjh.nz](https://i.mjh.nz) | Pluto, Plex, Samsung, Stirr |
+| [i.mjh.nz](https://i.mjh.nz) | Pluto, Plex, Samsung |
 | [EPGShare01](https://epgshare01.online) | LG |
 | [BuddyChewChew/tubi-scraper](https://github.com/BuddyChewChew/tubi-scraper) | Tubi |
 | [BuddyChewChew/xumo-playlist-generator](https://github.com/BuddyChewChew/xumo-playlist-generator) | Xumo |
 | [BuddyChewChew/localnow-playlist-generator](https://github.com/BuddyChewChew/localnow-playlist-generator) | LocalNow |
 
-Providers not listed (Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+, Git IPTV, Git Free TV) do not have EPG data available through the aggregator.
+Providers not listed (Stirr, Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+, Git IPTV, Git Free TV) do not have EPG data available through the aggregator.
 
 ---
 
@@ -389,7 +389,7 @@ MIT License — see [LICENSE](LICENSE) for full text.
 - [@Free-TV/IPTV](https://github.com/Free-TV/IPTV) — Free TV IPTV repository
 - [epgshare01.online](https://epgshare01.online) — Multi-provider EPG aggregation
 - [apsattv.com](https://www.apsattv.com) — External M3U sources for Vizio, LG, and others
-- [i.mjh.nz](https://i.mjh.nz) — Pluto, Plex, Samsung, and Stirr EPG feeds
+- [i.mjh.nz](https://i.mjh.nz) — Pluto, Plex, and Samsung EPG feeds
 - [watch.whaletvplus.com](https://watch.whaletvplus.com) — Whale TV+ free streaming
 
 ---

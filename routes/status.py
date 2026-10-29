@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # Providers that have a known EPG source in the aggregator
 _EPG_PROVIDERS = {
-    'plex', 'pluto', 'samsung', 'stirr', 'lg',
+    'plex', 'pluto', 'samsung', 'lg',
     'tubi', 'xumo', 'roku', 'localnow',
 }
 

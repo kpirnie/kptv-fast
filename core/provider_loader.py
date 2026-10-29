@@ -24,7 +24,6 @@ def load_providers(enabled_providers: list) -> dict:
         ('pluto',     'providers.pluto_provider',    'PlutoProvider'),
         ('plex',      'providers.plex_provider',     'PlexProvider'),
         ('samsung',   'providers.samsung_provider',  'SamsungProvider'),
-        ('distrotv',  'providers.distrotv_provider', 'DistroTVProvider'),
         ('lg',        'providers.lg_provider',       'LGProvider'),
         ('stirr',     'providers.stirr_provider',    'StirrProvider'),
         ('philo',     'providers.philo_provider',    'PhiloProvider'),
