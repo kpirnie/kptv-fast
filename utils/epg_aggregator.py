@@ -7,6 +7,7 @@ import gzip
 import re
 import time
 import threading
+import concurrent.futures
 import logging
 from datetime import datetime, timezone
 
@@ -115,8 +116,15 @@ class EPGAggregator:
         all_programmes = []
         seen_channel_ids: set = set()
 
-        for name, url in self.epg_sources.items():
-            xml_text = self._fetch_source(name, url)
+        # Fetch all sources concurrently, then process in source order so dedup stays deterministic
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.epg_sources)) as executor:
+            futures = {
+                name: executor.submit(self._fetch_source, name, url)
+                for name, url in self.epg_sources.items()
+            }
+
+        for name, future in futures.items():
+            xml_text = future.result()
             if not xml_text:
                 continue
 
