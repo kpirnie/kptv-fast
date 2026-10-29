@@ -175,6 +175,7 @@ class PhiloProvider(BaseProvider):
 
         self._channel_cache_ttl = 3600
         self._stream_ttl        = 1800
+        self.max_cache_age      = self._stream_ttl
         self._session_ttl       = 7200
         self._stream_workers    = 10
 

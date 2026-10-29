@@ -51,7 +51,7 @@ class UnifiedStreamingAggregator:
 
         # Config snapshot passed into status/debug blueprints (read-only display)
         self._config_snapshot = {
-            'cache_duration':   self.cache_duration,
+            'cache_duration':   self.channel_manager.cache_duration,
             'max_workers':      self.max_workers,
             'provider_timeout': self.provider_timeout,
             'git_country':      self.git_country,

@@ -36,6 +36,11 @@ class ChannelManager:
         self.max_workers       = int(os.getenv('MAX_WORKERS',          5))
         self.provider_timeout  = int(os.getenv('PROVIDER_TIMEOUT',    45))
 
+        # Cap the cache at the shortest provider-declared max age
+        caps = [p.max_cache_age for p in providers.values() if getattr(p, 'max_cache_age', None)]
+        if caps:
+            self.cache_duration = min(self.cache_duration, *caps)
+
         self.channel_name_include = os.getenv('CHANNEL_NAME_INCLUDE', '')
         self.channel_name_exclude = os.getenv('CHANNEL_NAME_EXCLUDE', '')
         self.group_include        = os.getenv('GROUP_INCLUDE',         '')

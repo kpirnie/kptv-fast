@@ -24,6 +24,9 @@ class BaseProvider(ABC):
         
         # Create optimized session with connection pooling
         self.session = self._create_optimized_session()
+
+        # Optional upper bound (seconds) on how long the aggregated channel cache may hold this provider's output
+        self.max_cache_age: Optional[int] = None
         
     def _create_optimized_session(self) -> requests.Session:
         """Create an optimized requests session with connection pooling and retries"""
