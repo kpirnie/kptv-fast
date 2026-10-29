@@ -21,7 +21,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 
 ## Features
 
-- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, DistroTV, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Whale TV+, Git IPTV (iptv-org), Git Free TV (Free-TV)
+- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Whale TV+, Git IPTV (iptv-org), Git Free TV (Free-TV)
 - **Unified EPG** — Aggregates external XMLTV sources into a single endpoint; no provider-specific configuration needed
 - **Concurrent Fetching** — All providers are queried in parallel via `ThreadPoolExecutor`
 - **Smart Caching** — 2-hour default cache with background pre-refresh at 75% TTL
@@ -45,7 +45,6 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 | Samsung TV Plus | `samsung` | ~420 | None | i.mjh.nz |
 | Tubi | `tubi` | ~50+ | None | BuddyChewChew repo |
 | Xumo | `xumo` | ~85 | None | BuddyChewChew repo |
-| DistroTV | `distrotv` | ~150+ | None | EPGShare01 |
 | LG Channels | `lg` | ~100–500+ | None | EPGShare01 |
 | Stirr | `stirr` | ~140+ | None | i.mjh.nz |
 | Philo | `philo` | ~110+ | Session cookies | None |
@@ -249,7 +248,7 @@ The EPG aggregator downloads and combines multiple external XMLTV sources into a
 | Source | Providers Covered |
 |---|---|
 | [i.mjh.nz](https://i.mjh.nz) | Pluto, Plex, Samsung, Stirr |
-| [EPGShare01](https://epgshare01.online) | LG, DistroTV |
+| [EPGShare01](https://epgshare01.online) | LG |
 | [BuddyChewChew/tubi-scraper](https://github.com/BuddyChewChew/tubi-scraper) | Tubi |
 | [BuddyChewChew/xumo-playlist-generator](https://github.com/BuddyChewChew/xumo-playlist-generator) | Xumo |
 | [BuddyChewChew/localnow-playlist-generator](https://github.com/BuddyChewChew/localnow-playlist-generator) | LocalNow |
@@ -325,7 +324,7 @@ Philo session cookies expire. Re-extract `_session_id` and `hashed_session_id` f
 ```yaml
 - PROVIDER_TIMEOUT=30     # reduce to fail faster
 - MAX_WORKERS=8           # increase parallelism
-- ENABLED_PROVIDERS=pluto,plex,samsung,tubi,distrotv  # disable slow providers
+- ENABLED_PROVIDERS=pluto,plex,samsung,tubi  # disable slow providers
 ```
 
 ### Enable full debug logging

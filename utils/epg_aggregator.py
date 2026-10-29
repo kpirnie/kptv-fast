@@ -36,7 +36,6 @@ class EPGAggregator:
             'samsung':  'https://i.mjh.nz/SamsungTVPlus/all.xml',
             'stirr':    'https://i.mjh.nz/Stirr/all.xml',
             'lg':       'https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz',
-            'distrotv': 'https://epgshare01.online/epgshare01/epg_ripper_DISTROTV1.xml.gz',
             'tubi':     'https://github.com/BuddyChewChew/tubi-scraper/raw/refs/heads/main/tubi_epg.xml',
             'xumo':     'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
             'roku':     'https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml',

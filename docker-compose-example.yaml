@@ -24,7 +24,7 @@ services:
       # Provider configuration: 
         # all or comma-separated from:
         # xumo,tubi,pluto,plex,samsung,
-        # lg,distrotv,stirr,git_freetv,git_iptv,
+        # lg,stirr,git_freetv,git_iptv,
         # vizio,roku,localnow,tcl,tclplus,firetv,
         # xiaomi,philo,tablo,whale
       - ENABLED_PROVIDERS=all
