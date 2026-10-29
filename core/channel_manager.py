@@ -28,6 +28,7 @@ class ChannelManager:
         self._channels_cache: dict  = {}
         self._cache_expiry: dict    = {}
         self._cache_lock            = threading.Lock()
+        self._fetch_lock            = threading.Lock()
         self._last_duplicates: dict = {}
 
         # Config from env
@@ -76,6 +77,9 @@ class ChannelManager:
         """
         Fetch channels from all providers concurrently and cache the result.
 
+        Only one fetch runs at a time; concurrent callers wait for it and
+        receive the freshly cached result.
+
         :param force: Skip the cache check and always re-fetch.
         """
         cache_key = 'all_channels'
@@ -84,41 +88,48 @@ class ChannelManager:
             if not force and self.is_cache_valid(cache_key):
                 return self._channels_cache[cache_key]
 
-        logger.info("Starting concurrent channel fetch from all providers")
-        start = time.time()
+        with self._fetch_lock:
 
-        all_channels: list = []
-        channel_number     = 1
+            # another caller may have finished a fetch while we waited
+            with self._cache_lock:
+                if not force and self.is_cache_valid(cache_key):
+                    return self._channels_cache[cache_key]
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_map = {
-                executor.submit(self._fetch_provider_channels, name, prov): name
-                for name, prov in self.providers.items()
-            }
-            for future in concurrent.futures.as_completed(future_map):
-                name = future_map[future]
-                try:
-                    result = future.result()
-                    if result:
-                        for ch in result:
-                            ch['provider']       = name
-                            ch['channel_number'] = ch.get('number', channel_number)
-                            channel_number += 1
-                        all_channels.extend(result)
-                except Exception as exc:
-                    logger.error(f"Error collecting results from {name}: {exc}")
+            logger.info("Starting concurrent channel fetch from all providers")
+            start = time.time()
 
-        all_channels = self._apply_filters(all_channels)
-        all_channels = self._remove_duplicates(all_channels)
-        all_channels.sort(key=lambda x: x.get('channel_number', 999999))
+            all_channels: list = []
+            channel_number     = 1
 
-        with self._cache_lock:
-            self._channels_cache[cache_key] = all_channels
-            self._cache_expiry[cache_key]   = time.time() + self.cache_duration
+            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_map = {
+                    executor.submit(self._fetch_provider_channels, name, prov): name
+                    for name, prov in self.providers.items()
+                }
+                for future in concurrent.futures.as_completed(future_map):
+                    name = future_map[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            for ch in result:
+                                ch['provider']       = name
+                                ch['channel_number'] = ch.get('number', channel_number)
+                                channel_number += 1
+                            all_channels.extend(result)
+                    except Exception as exc:
+                        logger.error(f"Error collecting results from {name}: {exc}")
 
-        logger.info(f"Concurrent fetch complete: {len(all_channels)} channels in {time.time() - start:.2f}s")
-        return all_channels
+            all_channels = self._apply_filters(all_channels)
+            all_channels = self._remove_duplicates(all_channels)
+            all_channels.sort(key=lambda x: x.get('channel_number', 999999))
 
+            with self._cache_lock:
+                self._channels_cache[cache_key] = all_channels
+                self._cache_expiry[cache_key]   = time.time() + self.cache_duration
+
+            logger.info(f"Concurrent fetch complete: {len(all_channels)} channels in {time.time() - start:.2f}s")
+            return all_channels
+            
     def _fetch_provider_channels(self, provider_name: str, provider) -> list:
         """Fetch channels from a single provider with a per-greenlet timeout."""
         try:
