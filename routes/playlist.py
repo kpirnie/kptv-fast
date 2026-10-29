@@ -38,6 +38,7 @@ def create_blueprint(channel_manager) -> Blueprint:
                 ]
 
             lines = ['#EXTM3U']
+            base_url = request.host_url.rstrip('/')
 
             for ch in channels:
                 attrs = []
@@ -54,7 +55,10 @@ def create_blueprint(channel_manager) -> Blueprint:
                 if ch.get('provider'):       attrs.append(f'provider="{ch["provider"]}"')
 
                 extinf = '#EXTINF:-1 ' + ' '.join(attrs) + f',{ch.get("name", "Unknown")}'
-                lines.extend([extinf, ch.get('stream_url', ''), ''])
+                stream_url = ch.get('stream_url', '')
+                if stream_url.startswith('/play/'):
+                    stream_url = base_url + stream_url
+                lines.extend([extinf, stream_url, ''])
 
             filename = f'{provider_filter}-playlist.m3u' if provider_filter else 'playlist.m3u'
             return Response(

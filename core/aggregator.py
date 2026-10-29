@@ -17,6 +17,7 @@ from core.channel_manager import ChannelManager
 from routes.playlist import create_blueprint as playlist_blueprint
 from routes.status   import create_blueprint as status_blueprint
 from routes.admin    import create_blueprint as admin_blueprint
+from routes.play     import create_blueprint as play_blueprint
 from utils.epg_aggregator import get_epg_aggregator
 
 logger = logging.getLogger(__name__)
@@ -92,7 +93,8 @@ class UnifiedStreamingAggregator:
         self.app.register_blueprint(playlist_blueprint(self.channel_manager))
         self.app.register_blueprint(status_blueprint(self.channel_manager, self._config_snapshot))
         self.app.register_blueprint(admin_blueprint(self.channel_manager))
-
+        self.app.register_blueprint(play_blueprint(self.channel_manager))
+        
     def run(self) -> None:
         """Start the gevent WSGI server on 0.0.0.0:8080."""
         logger.info("Starting KPTV FAST Streams")

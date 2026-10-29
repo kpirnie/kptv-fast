@@ -88,6 +88,10 @@ class BaseProvider(ABC):
         """Expire any provider-level caches so the next fetch hits upstream"""
         pass
     
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve a playable stream URL at play time; providers using /play/ routes override this"""
+        return None
+
     def validate_channel(self, channel: Dict[str, Any]) -> bool:
         """Validate that a channel has required fields"""
         try:
