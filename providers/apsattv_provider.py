@@ -199,16 +199,6 @@ class TCLProvider(ApsattvBaseProvider):
     def __init__(self):
         super().__init__('tcl')
 
-class TCLPlusProvider(ApsattvBaseProvider):
-    """TCL TV Plus channels"""
-    SOURCE_URL        = 'https://www.apsattv.com/tclplus.m3u'
-    DEFAULT_GROUP     = 'TCL TV Plus'
-    ID_PREFIX         = 'tclplus'
-    DESCRIPTION_LABEL = 'TCL TV Plus'
-
-    def __init__(self):
-        super().__init__('tclplus')
-
 class FireTVProvider(ApsattvBaseProvider):
     """Fire TV free channels"""
     SOURCE_URL        = 'https://www.apsattv.com/firetv.m3u'
