@@ -62,7 +62,7 @@ def create_blueprint(channel_manager) -> Blueprint:
             filename = f'{provider_filter}-playlist.m3u' if provider_filter else 'playlist.m3u'
             return Response(
                 '\n'.join(lines),
-                mimetype='application/vnd.apple.mpegurl',
+                mimetype='audio/x-mpegurl',
                 headers={'Content-Disposition': f'attachment; filename={filename}'},
             )
         except Exception as exc:
