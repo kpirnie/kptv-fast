@@ -179,16 +179,6 @@ class ApsattvBaseProvider(BaseProvider):
 # Individual provider classes — one per apsattv.com source
 # ---------------------------------------------------------------------------
 
-class VizioProvider(ApsattvBaseProvider):
-    """Vizio WatchFree+ channels"""
-    SOURCE_URL        = 'https://www.apsattv.com/vizio.m3u'
-    DEFAULT_GROUP     = 'Vizio WatchFree+'
-    ID_PREFIX         = 'vizio'
-    DESCRIPTION_LABEL = 'Vizio WatchFree+'
-
-    def __init__(self):
-        super().__init__('vizio')
-
 class LocalNowProvider(ApsattvBaseProvider):
     """Local Now channels"""
     SOURCE_URL        = 'https://www.apsattv.com/localnow.m3u'
