@@ -5,6 +5,7 @@ Uses Thinking Media's stirr.com API with iptv-org M3U fallback
 
 import re
 import time
+import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from .base_provider import BaseProvider
@@ -38,12 +39,24 @@ class StirrProvider(BaseProvider):
         self.channels_cache = None
         self.channels_cache_time = 0
         self.cache_duration = 3600  # 1 hour
+                
+        # Back off the playable endpoint once Stirr starts rate limiting
+        self.playable_backoff = 900  # 15 minutes
+        self.playable_blocked_until = 0
     
     def _fetch_playable_url(self, video_id: int) -> Optional[str]:
         """Fetch stream URL from the playable endpoint for channels missing 'live' field"""
+        
+        # Skip while rate limited
+        if time.time() < self.playable_blocked_until:
+            return None
+        
         try:
             url = f"{self.playable_url}/{video_id}/playable"
-            response = self.make_request('GET', url, headers=self.headers)
+            response = self.session.get(url, headers=self.headers, timeout=self.get_timeout())
+            
+            if response.status_code == 429:
+                raise requests.exceptions.RetryError("429")
             
             if response.status_code != 200:
                 self.logger.debug(f"Playable endpoint returned {response.status_code} for video {video_id}")
@@ -63,6 +76,13 @@ class StirrProvider(BaseProvider):
                     self.logger.debug(f"Fetched playable URL for video {video_id}: {stream_url[:50]}...")
                     return stream_url
             
+            return None
+            
+        except requests.exceptions.RetryError:
+            self.playable_blocked_until = time.time() + self.playable_backoff
+            self.logger.warning(
+                f"Stirr playable endpoint rate limited (429); skipping it for {self.playable_backoff // 60} minutes"
+            )
             return None
             
         except Exception as e:
