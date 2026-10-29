@@ -34,6 +34,10 @@ def create_blueprint(channel_manager) -> Blueprint:
             lines = ['#EXTM3U']
             base_url = request.host_url.rstrip('/')
 
+            # M3U has no escaping; swap double quotes and strip line breaks so attributes can't break the #EXTINF line
+            def _attr(value) -> str:
+                return str(value).replace('"', "'").replace('\r', ' ').replace('\n', ' ')
+
             for ch in channels:
                 attrs = []
                 # Strip provider prefix from tvg-id (e.g. "samsung-" from "samsung-US390001557")
@@ -41,14 +45,15 @@ def create_blueprint(channel_manager) -> Blueprint:
                 provider = ch.get('provider', '')
                 if provider and ch_id.startswith(f'{provider}-'):
                     ch_id = ch_id[len(provider) + 1:]
-                if ch_id: attrs.append(f'tvg-id="{ch_id}"')
-                if ch.get('name'):           attrs.append(f'tvg-name="{ch["name"]}"')
-                if ch.get('logo'):           attrs.append(f'tvg-logo="{ch["logo"]}"')
-                if ch.get('group'):          attrs.append(f'group-title="{ch["group"]}"')
-                if ch.get('channel_number'): attrs.append(f'tvg-chno="{ch["channel_number"]}"')
-                if ch.get('provider'):       attrs.append(f'provider="{ch["provider"]}"')
+                if ch_id: attrs.append(f'tvg-id="{_attr(ch_id)}"')
+                if ch.get('name'):           attrs.append(f'tvg-name="{_attr(ch["name"])}"')
+                if ch.get('logo'):           attrs.append(f'tvg-logo="{_attr(ch["logo"])}"')
+                if ch.get('group'):          attrs.append(f'group-title="{_attr(ch["group"])}"')
+                if ch.get('channel_number'): attrs.append(f'tvg-chno="{_attr(ch["channel_number"])}"')
+                if ch.get('provider'):       attrs.append(f'provider="{_attr(ch["provider"])}"')
 
-                extinf = '#EXTINF:-1 ' + ' '.join(attrs) + f',{ch.get("name", "Unknown")}'
+                display_name = str(ch.get("name", "Unknown")).replace('\r', ' ').replace('\n', ' ')
+                extinf = '#EXTINF:-1 ' + ' '.join(attrs) + f',{display_name}'
                 stream_url = ch.get('stream_url', '')
                 if stream_url.startswith('/play/'):
                     stream_url = base_url + stream_url
