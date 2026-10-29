@@ -72,12 +72,16 @@ class ChannelManager:
 
     # ── Internal fetch pipeline ───────────────────────────────────────────────
 
-    def _get_all_channels_concurrent(self) -> list:
-        """Fetch channels from all providers concurrently and cache the result."""
+    def _get_all_channels_concurrent(self, force: bool = False) -> list:
+        """
+        Fetch channels from all providers concurrently and cache the result.
+
+        :param force: Skip the cache check and always re-fetch.
+        """
         cache_key = 'all_channels'
 
         with self._cache_lock:
-            if self.is_cache_valid(cache_key):
+            if not force and self.is_cache_valid(cache_key):
                 return self._channels_cache[cache_key]
 
         logger.info("Starting concurrent channel fetch from all providers")
@@ -234,7 +238,7 @@ class ChannelManager:
                     if stale:
                         logger.info("🔄 Background refresh starting…")
                         t = time.time()
-                        self._get_all_channels_concurrent()
+                        self._get_all_channels_concurrent(force=True)
                         logger.info(f"✅ Background refresh done in {time.time() - t:.1f}s")
 
                 except Exception as exc:
