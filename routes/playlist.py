@@ -10,12 +10,6 @@ from utils.epg_aggregator import get_epg_aggregator
 
 logger = logging.getLogger(__name__)
 
-# Providers that have a known EPG source in the aggregator
-EPG_PROVIDERS = {
-    'plex', 'pluto', 'samsung', 'stirr', 'lg',
-    'distrotv', 'tubi', 'xumo', 'roku', 'localnow',
-}
-
 
 def create_blueprint(channel_manager) -> Blueprint:
     """
