@@ -52,7 +52,7 @@ def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
             refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes'}
 
             if refresh:
-                channels        = channel_manager.get_all_channels()
+                channels        = channel_manager.get_all_channels(force=True)
                 channels_source = 'live refresh'
             else:
                 channels = channel_manager.get_cached_channels()

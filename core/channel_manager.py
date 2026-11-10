@@ -30,6 +30,7 @@ class ChannelManager:
         self._cache_lock            = threading.Lock()
         self._fetch_lock            = threading.Lock()
         self._last_duplicates: dict = {}
+        self._refreshing: bool      = False
 
         # Config from env
         self.cache_duration    = int(os.getenv('CACHE_DURATION',    7200))
@@ -78,9 +79,58 @@ class ChannelManager:
 
     # ── Public fetch interface ────────────────────────────────────────────────
 
-    def get_all_channels(self) -> list:
-        """Return all channels, refreshing the cache if stale."""
+    def get_all_channels(self, force: bool = False) -> list:
+        """
+        Return all channels.
+
+        A valid cache is returned as-is. An expired cache is still returned
+        immediately while a background refresh runs. Only an empty cache blocks.
+
+        :param force: Skip the cache and always run a live fetch.
+        """
+        cache_key = 'all_channels'
+
+        if force:
+            return self._get_all_channels_concurrent(force=True)
+
+        with self._cache_lock:
+            cached = self._channels_cache.get(cache_key)
+            valid  = self.is_cache_valid(cache_key)
+
+        if valid:
+            return cached
+
+        # expired but present — serve stale and refresh behind the scenes
+        if cached:
+            self._refresh_in_background()
+            return cached
+
         return self._get_all_channels_concurrent()
+
+    def _refresh_in_background(self) -> None:
+        """Start a single background refresh; does nothing if one is already running."""
+        with self._cache_lock:
+            if self._refreshing:
+                return
+            self._refreshing = True
+
+        def _worker():
+            try:
+                logger.info("🔄 Cache expired — serving stale, refreshing in background…")
+                t = time.time()
+                self._get_all_channels_concurrent()
+                logger.info(f"✅ Stale refresh done in {time.time() - t:.1f}s")
+            except Exception as exc:
+                logger.error(f"Stale refresh error: {exc}")
+            finally:
+                with self._cache_lock:
+                    self._refreshing = False
+
+        threading.Thread(
+            target=_worker,
+            daemon=True,
+            name='channel-stale-refresh',
+        ).start()
 
     # ── Internal fetch pipeline ───────────────────────────────────────────────
 
@@ -133,6 +183,14 @@ class ChannelManager:
             all_channels = self._apply_filters(all_channels)
             all_channels = self._remove_duplicates(all_channels)
             all_channels.sort(key=lambda x: x.get('channel_number', 999999))
+
+            # never replace a good cache with an empty result
+            if not all_channels:
+                with self._cache_lock:
+                    previous = self._channels_cache.get(cache_key)
+                if previous:
+                    logger.warning("⚠️  Fetch returned no channels — keeping previous cache")
+                    all_channels = previous
 
             with self._cache_lock:
                 self._channels_cache[cache_key] = all_channels
