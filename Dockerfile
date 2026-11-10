@@ -14,9 +14,7 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     libffi-dev \
-    openssl-dev \
-    cargo \
-    rust
+    openssl-dev
 
 # Create virtual environment
 RUN python -m venv /opt/venv
