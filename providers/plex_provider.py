@@ -2,7 +2,6 @@
 Plex Provider Implementation
 """
 
-import requests
 import json
 import uuid
 import gzip
@@ -86,7 +85,7 @@ class PlexProvider(BaseProvider):
                 if forwarded_ip:
                     headers["X-Forwarded-For"] = forwarded_ip
             
-            response = requests.post(url, params=self.params, headers=headers, timeout=self.get_timeout())
+            response = self.session.post(url, params=self.params, headers=headers, timeout=self.get_timeout())
             response.raise_for_status()
             
             data = response.json()
@@ -125,7 +124,7 @@ class PlexProvider(BaseProvider):
                 if forwarded_ip:
                     headers["X-Forwarded-For"] = forwarded_ip
             
-            response = requests.get(url, params=params, headers=headers, timeout=self.get_timeout())
+            response = self.session.get(url, params=params, headers=headers, timeout=self.get_timeout())
             response.raise_for_status()
             
             data = response.json()
@@ -153,7 +152,7 @@ class PlexProvider(BaseProvider):
                 try:
                     channels_url = f'https://epg.provider.plex.tv/lineups/plex/channels?genre={genre_id}'
                     
-                    response = requests.get(channels_url, params=params, headers=headers, timeout=self.get_timeout())
+                    response = self.session.get(channels_url, params=params, headers=headers, timeout=self.get_timeout())
                     if response.status_code != 200:
                         self.logger.warning(f"Failed to get channels for genre {genre_name}: {response.status_code}")
                         continue

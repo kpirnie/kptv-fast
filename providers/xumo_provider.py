@@ -24,9 +24,6 @@ class XumoProvider(BaseProvider):
         self.geo_id = "us"
         self.primary_list_id = "10006"
         
-        # Create session for connection reuse
-        self.session = requests.Session()
-        
         # Headers
         self.web_headers = {
             'User-Agent': self.get_user_agent(),

@@ -2,7 +2,6 @@
 Samsung TV Plus Provider Implementation
 """
 
-import requests
 import json
 import uuid
 import gzip
@@ -36,7 +35,7 @@ class SamsungProvider(BaseProvider):
     def _get_app_data(self) -> dict:
         """Get Samsung TV Plus app data"""
         try:
-            response = requests.get(self.app_url, headers=self.headers, timeout=self.get_timeout())
+            response = self.session.get(self.app_url, headers=self.headers, timeout=self.get_timeout())
             response.raise_for_status()
             
             # Decompress and parse JSON

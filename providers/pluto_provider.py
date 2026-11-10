@@ -6,7 +6,6 @@ Stream URLs built from bootData.servers.stitcher + channel.stitched.path
 + bootData.stitcherParams + jwt + masterJWTPassthrough=true.
 """
 
-import requests
 import uuid
 import os
 from datetime import datetime, timezone
@@ -106,7 +105,7 @@ class PlutoProvider(BaseProvider):
         }
 
         try:
-            resp = requests.get(
+            resp = self.session.get(
                 _BOOT_URL,
                 headers=self._base_headers,
                 params=params,
@@ -163,7 +162,7 @@ class PlutoProvider(BaseProvider):
     def _get_categories(self, channel_headers: dict) -> Dict[str, str]:
         """Map channel_id → category name."""
         try:
-            resp = requests.get(
+            resp = self.session.get(
                 _CATS_URL,
                 headers=channel_headers,
                 timeout=self.get_timeout(),
@@ -208,7 +207,7 @@ class PlutoProvider(BaseProvider):
         }
 
         try:
-            resp = requests.get(
+            resp = self.session.get(
                 _CHANNELS_URL,
                 params=channel_params,
                 headers=channel_headers,

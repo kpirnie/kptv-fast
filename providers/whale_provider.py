@@ -127,7 +127,7 @@ def _channels_to_m3u(channels: list, provider_name: str = "WhaleTVPlus") -> str:
 
 # ── M3U fallback helpers ────────────────────────────────────────────────────
 
-def _fetch_m3u_fallback(country: str) -> str:
+def _fetch_m3u_fallback(session: requests.Session, country: str) -> str:
     """Try per-country then global M3U from apsattv.com."""
     cc = country.lower()
     urls = [
@@ -136,7 +136,7 @@ def _fetch_m3u_fallback(country: str) -> str:
     ]
     for url in urls:
         try:
-            resp = requests.get(url, timeout=15)
+            resp = session.get(url, timeout=15)
             if resp.status_code == 200 and "#EXTM3U" in resp.text:
                 logger.info("Whale: using M3U fallback %s", url)
                 return resp.text
@@ -231,13 +231,13 @@ class WhaleTVProvider(BaseProvider):
                     logger.warning(
                         "Whale: no channels from API for %s, trying M3U fallback", country
                     )
-                    m3u = _fetch_m3u_fallback(country)
+                    m3u = _fetch_m3u_fallback(self.session, country)
                     if m3u:
                         all_raw.extend(_parse_m3u(m3u))
         else:
             logger.warning("Whale: auth failed, falling back to M3U")
             for country in self.countries:
-                m3u = _fetch_m3u_fallback(country)
+                m3u = _fetch_m3u_fallback(self.session, country)
                 if m3u:
                     all_raw.extend(_parse_m3u(m3u))
 
