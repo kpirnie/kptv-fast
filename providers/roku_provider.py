@@ -1,11 +1,11 @@
 """
 Roku Provider Implementation
 Uses The Roku Channel API with apsattv.com M3U fallback
+API stream URLs are resolved at play time via /play/roku/<id>
 """
 
 import re
 import time
-import concurrent.futures
 from typing import List, Dict, Any, Optional
 from .base_provider import BaseProvider
 
@@ -41,6 +41,14 @@ class RokuProvider(BaseProvider):
         self._channels_cache: List[Dict[str, Any]] = []
         self._cache_expiry: float = 0
         self._cache_duration: int = 3600
+
+        # channel ids served via /play/ (empty while the apsattv fallback is in use)
+        self._api_ids: set = set()
+
+        # Shared CSRF session + per-channel resolved URL cache: {id: {"url": str, "expiry": float}}
+        self._roku_session = None
+        self._stream_ttl: int = 1800
+        self._stream_cache: Dict[str, Dict[str, Any]] = {}
 
     # ── Roku API helpers ──────────────────────────────────────────────────────
 
@@ -107,7 +115,7 @@ class RokuProvider(BaseProvider):
             return None
 
     def _get_channels_from_api(self) -> List[Dict[str, Any]]:
-        """Fetch channel list from i.mjh.nz and resolve stream URLs."""
+        """Fetch channel list from i.mjh.nz; streams resolve at play time."""
         try:
             r = self.make_request("GET", self.CHANNELS_JSON_URL,
                                   headers=self._base_headers)
@@ -122,46 +130,31 @@ class RokuProvider(BaseProvider):
             self.logger.warning("Roku: no channels in JSON response")
             return []
 
-        self.logger.info(f"Roku: resolving streams for {len(channels_data)} channels")
-        session = self._make_roku_session()
-
-        def resolve(item):
-            channel_id, ch = item
-            url = self._resolve_stream(session, channel_id)
-            return channel_id, ch, url
-
         channels: List[Dict[str, Any]] = []
-        max_workers = min(10, len(channels_data))
+        api_ids: set = set()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = {ex.submit(resolve, item): item[0]
-                       for item in channels_data.items()}
-            for fut in concurrent.futures.as_completed(futures, timeout=120):
-                try:
-                    channel_id, ch, stream_url = fut.result(timeout=20)
-                    if not stream_url:
-                        continue
+        for channel_id, ch in channels_data.items():
+            groups = ch.get("groups", [])
+            group  = groups[0] if groups else "The Roku Channel"
+            name   = ch.get("name", "Unknown")
 
-                    groups = ch.get("groups", [])
-                    group  = groups[0] if groups else "The Roku Channel"
-                    name   = ch.get("name", "Unknown")
+            channel = {
+                "id":          f"roku-{channel_id}",
+                "name":        name,
+                "stream_url":  f"/play/roku/{channel_id}",
+                "logo":        ch.get("logo", ""),
+                "group":       group,
+                "number":      ch.get("chno"),
+                "description": f"The Roku Channel: {name}",
+                "language":    "en",
+            }
+            if self.validate_channel(channel):
+                channels.append(self.normalize_channel(channel))
+                api_ids.add(channel_id)
 
-                    channel = {
-                        "id":          f"roku-{channel_id}",
-                        "name":        name,
-                        "stream_url":  stream_url,
-                        "logo":        ch.get("logo", ""),
-                        "group":       group,
-                        "number":      ch.get("chno"),
-                        "description": f"The Roku Channel: {name}",
-                        "language":    "en",
-                    }
-                    if self.validate_channel(channel):
-                        channels.append(self.normalize_channel(channel))
-                except Exception as e:
-                    self.logger.debug(f"Roku: worker error: {e}")
+        self._api_ids = api_ids
 
-        self.logger.info(f"Roku: resolved {len(channels)} channels via API")
+        self.logger.info(f"Roku: {len(channels)} channels from API")
         return channels
 
     # ── Fallback M3U ─────────────────────────────────────────────────────────
@@ -250,6 +243,7 @@ class RokuProvider(BaseProvider):
 
         if len(channels) < 10:
             self.logger.info("Roku: API returned too few channels, using fallback")
+            self._api_ids = set()
             channels = self._get_channels_from_fallback()
 
         if channels:
@@ -257,6 +251,35 @@ class RokuProvider(BaseProvider):
             self._cache_expiry   = time.time() + self._cache_duration
 
         return channels
+
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve a Roku channel's stream URL at play time (30 min per-channel cache)."""
+        cached = self._stream_cache.get(channel_id)
+        if cached and cached["expiry"] > time.time():
+            return cached["url"]
+
+        if channel_id not in self._api_ids:
+            self.get_channels()
+            if channel_id not in self._api_ids:
+                return None
+
+        fresh = self._roku_session is None
+        if fresh:
+            self._roku_session = self._make_roku_session()
+
+        url = self._resolve_stream(self._roku_session, channel_id)
+
+        # a reused session may have gone stale — rebuild it and retry once
+        if not url and not fresh:
+            self._roku_session = self._make_roku_session()
+            url = self._resolve_stream(self._roku_session, channel_id)
+
+        if url:
+            self._stream_cache[channel_id] = {
+                "url":    url,
+                "expiry": time.time() + self._stream_ttl,
+            }
+        return url
 
     def clear_cache(self) -> None:
         self._cache_expiry = 0
