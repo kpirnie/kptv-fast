@@ -43,6 +43,10 @@ class StirrProvider(BaseProvider):
         # Back off the playable endpoint once Stirr starts rate limiting
         self.playable_backoff = 900  # 15 minutes
         self.playable_blocked_until = 0
+        
+        # Per-channel playable URL cache: {video_id: {"url": str, "expiry": float}}
+        self.stream_cache = {}
+        self.stream_ttl = 1800  # 30 minutes
     
     def _fetch_playable_url(self, video_id: int) -> Optional[str]:
         """Fetch stream URL from the playable endpoint for channels missing 'live' field"""
@@ -161,14 +165,10 @@ class StirrProvider(BaseProvider):
         # Get stream URL from the 'live' field - this is the complete Aniview SSAI URL
         stream_url = video.get('live', '')
         
-        # If no live URL, try fetching from the playable endpoint
+        # If no live URL, resolve it from the playable endpoint at play time
         if not stream_url:
-            self.logger.debug(f"No 'live' URL for channel: {title}, trying playable endpoint")
-            stream_url = self._fetch_playable_url(video_id)
-        
-        if not stream_url:
-            self.logger.debug(f"No stream URL found for channel: {title}")
-            return None
+            self.logger.debug(f"No 'live' URL for channel: {title}, resolving at play time")
+            stream_url = f"/play/stirr/{video_id}"
         
         # Get thumbnail - prefer larger sizes, also check logo field
         logo = video.get('logo', '')
@@ -343,6 +343,20 @@ class StirrProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Error fetching Stirr channels: {e}")
             return []
+
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve a Stirr channel's stream URL at play time (30 min per-channel cache)"""
+        cached = self.stream_cache.get(channel_id)
+        if cached and cached['expiry'] > time.time():
+            return cached['url']
+        
+        url = self._fetch_playable_url(channel_id)
+        if url:
+            self.stream_cache[channel_id] = {
+                'url': url,
+                'expiry': time.time() + self.stream_ttl
+            }
+        return url
 
     def clear_cache(self) -> None:
         """Expire the channel cache"""
