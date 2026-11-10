@@ -1,5 +1,6 @@
 """
 Xumo Provider Implementation - Optimized for Speed
+Stream URLs are resolved at play time via /play/xumo/<id>
 """
 
 import requests
@@ -7,9 +8,8 @@ import json
 import os
 import uuid
 import time
-import concurrent.futures
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .base_provider import BaseProvider
 
 class XumoProvider(BaseProvider):
@@ -40,8 +40,9 @@ class XumoProvider(BaseProvider):
             'User-Agent': 'okhttp/4.9.3',
         }
         
-        # Cache for stream URLs to avoid repeated lookups
+        # Per-channel stream URL cache: {channel_id: {"url": str, "expiry": float}}
         self.stream_cache = {}
+        self.stream_ttl = 1800
         
     def _fetch_data(self, url: str, headers: dict = None, params: dict = None, retries: int = 1) -> dict:
         """Fetch data from URL with retries - optimized"""
@@ -139,7 +140,6 @@ class XumoProvider(BaseProvider):
             
             self.logger.debug(f"Found {len(channel_items)} Xumo channel items")
             
-            # Process channels concurrently but with limits
             processed_channels = []
             
             # Filter out DRM and non-live channels first
@@ -155,7 +155,7 @@ class XumoProvider(BaseProvider):
             
             self.logger.debug(f"Filtered to {len(valid_items)} valid Xumo channels")
             
-            # Process valid channels with threading for stream URL fetching
+            # Build channel entries; streams resolve at play time
             def process_channel_item(item):
                 try:
                     channel_id = item.get('guid', {}).get('value')
@@ -184,16 +184,10 @@ class XumoProvider(BaseProvider):
                     elif isinstance(genre_list, str):
                         genre = genre_list
                     
-                    # Get stream URL (optimized)
-                    stream_url = self._get_stream_url_fast(channel_id)
-                    if not stream_url:
-                        self.logger.debug(f"No stream URL found for channel {channel_id}")
-                        return None
-                    
                     channel = {
                         'id': str(channel_id),
                         'name': title,
-                        'stream_url': stream_url,
+                        'stream_url': f"/play/xumo/{channel_id}",
                         'logo': logo_url,
                         'group': genre,
                         'number': int(number_str) if number_str else None,
@@ -209,22 +203,10 @@ class XumoProvider(BaseProvider):
                     self.logger.debug(f"Error processing Xumo channel item: {e}")
                     return None
             
-            # Use ThreadPoolExecutor for concurrent processing, but limit workers
-            max_workers = min(10, len(valid_items))  # Limit concurrent requests
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all tasks
-                futures = [executor.submit(process_channel_item, item) for item in valid_items]
-                
-                # Collect results with timeout
-                for future in concurrent.futures.as_completed(futures, timeout=30):
-                    try:
-                        result = future.result(timeout=5)
-                        if result:
-                            processed_channels.append(result)
-                    except Exception as e:
-                        self.logger.debug(f"Error processing Xumo channel future: {e}")
-                        continue
+            for item in valid_items:
+                result = process_channel_item(item)
+                if result:
+                    processed_channels.append(result)
             
             elapsed = time.time() - start_time
             self.logger.info(f"Successfully processed {len(processed_channels)} Xumo channels in {elapsed:.1f}s")
@@ -235,9 +217,14 @@ class XumoProvider(BaseProvider):
             return []
     
     def _get_stream_url_fast(self, channel_id: str) -> str:
-        if channel_id in self.stream_cache:
-            return self.stream_cache[channel_id]
+        cached = self.stream_cache.get(channel_id)
+        if cached and cached['expiry'] > time.time():
+            return cached['url']
         return self._get_stream_url_api(channel_id)
+
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve a Xumo channel's stream URL at play time (30 min per-channel cache)"""
+        return self._get_stream_url_fast(channel_id) or None
 
     
     def _get_stream_url_api(self, channel_id: str) -> str:
@@ -296,7 +283,10 @@ class XumoProvider(BaseProvider):
                         uri = source.get('uri')
                         if uri and (source.get('type') == 'application/x-mpegURL' or uri.endswith('.m3u8')):
                             processed_uri = self._process_stream_uri(uri)
-                            self.stream_cache[channel_id] = processed_uri
+                            self.stream_cache[channel_id] = {
+                                'url': processed_uri,
+                                'expiry': time.time() + self.stream_ttl
+                            }
                             return processed_uri
             
             return ""
