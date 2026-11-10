@@ -1,5 +1,5 @@
 """
-Flask blueprint: /, /status, /debug
+Flask blueprint: /, /status, /debug, /health
 """
 
 import json
@@ -44,6 +44,10 @@ _ICON_EPG = (
 
 def create_blueprint(channel_manager, aggregator_config: dict) -> Blueprint:
     bp = Blueprint('status', __name__)
+
+    @bp.route('/health')
+    def health():
+        return Response('ok', mimetype='text/plain')
 
     @bp.route('/')
     @bp.route('/status')
