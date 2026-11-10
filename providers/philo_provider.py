@@ -173,9 +173,18 @@ class PhiloProvider(BaseProvider):
     def __init__(self):
         super().__init__("philo")
 
+        # Philo needs browser cookies — refuse to load without them
+        if (
+            not os.getenv("PHILO_SESSION_ID", "").strip()
+            or not os.getenv("PHILO_HASHED_SESSION_ID", "").strip()
+        ):
+            raise RuntimeError(
+                "Philo not configured — PHILO_SESSION_ID and "
+                "PHILO_HASHED_SESSION_ID must be set"
+            )
+
         self._channel_cache_ttl = 3600
         self._stream_ttl        = 1800
-        self.max_cache_age      = self._stream_ttl
         self._session_ttl       = 7200
         self._stream_workers    = 10
 
