@@ -51,12 +51,24 @@ class ChannelManager:
         if caps:
             self.cache_duration = min(self.cache_duration, *caps)
 
-        self.channel_name_include = os.getenv('CHANNEL_NAME_INCLUDE', '')
-        self.channel_name_exclude = os.getenv('CHANNEL_NAME_EXCLUDE', '')
-        self.group_include        = os.getenv('GROUP_INCLUDE',         '')
-        self.group_exclude        = os.getenv('GROUP_EXCLUDE',         '')
+        self.channel_name_include = self._compile_filter('CHANNEL_NAME_INCLUDE')
+        self.channel_name_exclude = self._compile_filter('CHANNEL_NAME_EXCLUDE')
+        self.group_include        = self._compile_filter('GROUP_INCLUDE')
+        self.group_exclude        = self._compile_filter('GROUP_EXCLUDE')
 
         self._start_background_refresh()
+
+    def _compile_filter(self, env_name: str):
+        """Compile a filter regex from the environment once; an invalid pattern is logged and that filter disabled."""
+        pattern = os.getenv(env_name, '')
+        if not pattern:
+            return None
+
+        try:
+            return re.compile(pattern, re.IGNORECASE)
+        except re.error as exc:
+            logger.error(f"❌ Invalid {env_name} regex '{pattern}' — filter disabled: {exc}")
+            return None
 
     # ── Cache helpers ─────────────────────────────────────────────────────────
 
@@ -272,13 +284,13 @@ class ChannelManager:
             name  = ch.get('name',  '')
             group = ch.get('group', '')
 
-            if self.channel_name_include and not re.search(self.channel_name_include, name,  re.IGNORECASE):
+            if self.channel_name_include and not self.channel_name_include.search(name):
                 continue
-            if self.channel_name_exclude and     re.search(self.channel_name_exclude, name,  re.IGNORECASE):
+            if self.channel_name_exclude and     self.channel_name_exclude.search(name):
                 continue
-            if self.group_include        and not re.search(self.group_include,        group, re.IGNORECASE):
+            if self.group_include        and not self.group_include.search(group):
                 continue
-            if self.group_exclude        and     re.search(self.group_exclude,        group, re.IGNORECASE):
+            if self.group_exclude        and     self.group_exclude.search(group):
                 continue
 
             filtered.append(ch)
