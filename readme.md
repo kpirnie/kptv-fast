@@ -82,7 +82,6 @@ services:
       - WARM_CACHE_ON_STARTUP=true
       - STARTUP_CACHE_DELAY=10
       - WARM_EPG_ON_STARTUP=true
-      - MAX_WORKERS=5
       - PROVIDER_TIMEOUT=60
       - ENABLED_PROVIDERS=all
       - GIT_COUNTRY=us,ca,uk
@@ -151,7 +150,7 @@ All configuration is done via environment variables.
 | `DEBUG` | `false` | Enable verbose logging (function names, line numbers, stack traces) |
 | `ENABLED_PROVIDERS` | `all` | Comma-separated list of provider keys to enable, or `all` |
 | `CACHE_DURATION` | `7200` | Channel cache TTL in seconds |
-| `MAX_WORKERS` | `5` | Max concurrent provider fetch threads |
+| `MAX_WORKERS` | one per enabled provider | Max concurrent provider fetch threads |
 | `PROVIDER_TIMEOUT` | `45` | Per-provider hard timeout in seconds |
 
 ### Startup & Cache
@@ -271,7 +270,7 @@ Providers not listed (Stirr, Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+
 
 ### Tuning Tips
 
-- **Increase `MAX_WORKERS`** if your host has headroom; 8–10 is reasonable for most setups
+- **Lower `MAX_WORKERS`** if your host is constrained; by default every enabled provider is fetched concurrently
 - **Reduce `PROVIDER_TIMEOUT`** to drop slow providers faster rather than waiting the full timeout
 - **Use `ENABLED_PROVIDERS`** to skip providers you don't need — fewer providers means faster cache builds
 - **Set `GITHUB_TOKEN`** if you enable `git_iptv` or `git_freetv` to avoid GitHub API rate limits
@@ -323,7 +322,6 @@ Philo session cookies expire. Re-extract `_session_id` and `hashed_session_id` f
 
 ```yaml
 - PROVIDER_TIMEOUT=30     # reduce to fail faster
-- MAX_WORKERS=8           # increase parallelism
 - ENABLED_PROVIDERS=pluto,plex,samsung,tubi  # disable slow providers
 ```
 

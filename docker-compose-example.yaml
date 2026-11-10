@@ -17,7 +17,7 @@ services:
       - WARM_EPG_ON_STARTUP=true      # Also warm EPG cache (slower)
       
       # Performance
-      - MAX_WORKERS=5           # Concurrent provider fetches (default: 5)
+      - MAX_WORKERS=            # Concurrent provider fetches (default: one per enabled provider)
       - PROVIDER_TIMEOUT=60     # Per-provider timeout in seconds (default: 45)
       - PYTHONUNBUFFERED=1
 

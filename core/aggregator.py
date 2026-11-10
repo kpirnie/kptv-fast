@@ -33,7 +33,6 @@ class UnifiedStreamingAggregator:
     def __init__(self):
         # ── Config ────────────────────────────────────────────────────────────
         self.cache_duration   = int(os.getenv('CACHE_DURATION',    7200))
-        self.max_workers      = int(os.getenv('MAX_WORKERS',           5))
         self.provider_timeout = int(os.getenv('PROVIDER_TIMEOUT',     45))
         self.git_country      = os.getenv('GIT_COUNTRY', '')
         self.startup_delay    = int(os.getenv('STARTUP_CACHE_DELAY',  10))
@@ -53,6 +52,7 @@ class UnifiedStreamingAggregator:
             providers  = self.providers,
             debug_mode = debug_mode,
         )
+        self.max_workers = self.channel_manager.max_workers
 
         # Config snapshot passed into status/debug blueprints (read-only display)
         self._config_snapshot = {

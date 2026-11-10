@@ -34,7 +34,7 @@ class ChannelManager:
 
         # Config from env
         self.cache_duration    = int(os.getenv('CACHE_DURATION',    7200))
-        self.max_workers       = int(os.getenv('MAX_WORKERS',          5))
+        self.max_workers       = int(os.getenv('MAX_WORKERS') or max(1, len(providers)))
         self.provider_timeout  = int(os.getenv('PROVIDER_TIMEOUT',    45))
 
         # Cap the cache at the shortest provider-declared max age
