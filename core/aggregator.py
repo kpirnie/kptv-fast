@@ -56,6 +56,7 @@ class UnifiedStreamingAggregator:
 
         # EPG is filtered to the channel list
         get_epg_aggregator().set_channel_manager(self.channel_manager)
+        get_epg_aggregator().start_background_refresh()
 
         # Config snapshot passed into status/debug blueprints (read-only display)
         self._config_snapshot = {

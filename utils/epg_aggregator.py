@@ -34,6 +34,11 @@ class EPGAggregator:
         # Set by the aggregator so the guide can be filtered to the channel list
         self._channel_manager = None
 
+        # Background refresh state
+        self._refreshing          = False
+        self._provider_refreshing: set = set()
+        self._bg_started          = False
+
         self.epg_sources = {
             'plex':     'https://i.mjh.nz/Plex/all.xml',
             'pluto':    'https://i.mjh.nz/PlutoTV/all.xml',
@@ -143,7 +148,29 @@ class EPGAggregator:
         self._channel_manager = channel_manager
 
     def get_combined_epg(self, force_refresh: bool = False) -> bytes:
-        """Return combined XMLTV (UTF-8 bytes) from all sources, using cache when valid."""
+        """
+        Return combined XMLTV (UTF-8 bytes) from all sources.
+
+        A valid cache is returned as-is. An expired cache is still returned
+        immediately while a background rebuild runs. Only an empty cache blocks.
+        """
+        with self.cache_lock:
+            cached = self.cache
+            valid  = bool(cached) and time.time() < self.cache_expiry
+
+        if not force_refresh and valid:
+            logger.debug("Returning cached EPG")
+            return cached
+
+        # Expired but present — serve stale and rebuild behind the scenes
+        if not force_refresh and cached:
+            self._refresh_combined_in_background()
+            return cached
+
+        return self._build_combined_epg(force_refresh)
+
+    def _build_combined_epg(self, force_refresh: bool = False) -> bytes:
+        """Build the combined XMLTV (UTF-8 bytes), or return the cache if another caller just did."""
         with self.cache_lock:
             if not force_refresh and self.cache and time.time() < self.cache_expiry:
                 logger.debug("Returning cached EPG")
@@ -241,8 +268,13 @@ class EPGAggregator:
     def get_combined_epg_gzipped(self, force_refresh: bool = False) -> bytes:
         """Return combined XMLTV as gzip-compressed bytes."""
         with self.cache_lock:
-            if not force_refresh and self.cache_gz and time.time() < self.cache_expiry:
-                return self.cache_gz
+            gz    = self.cache_gz
+            valid = bool(gz) and time.time() < self.cache_expiry
+
+        if not force_refresh and gz:
+            if not valid:
+                self._refresh_combined_in_background()
+            return gz
 
         xml = self.get_combined_epg(force_refresh)
 
@@ -259,6 +291,7 @@ class EPGAggregator:
         provider's channels in the channel list.
 
         Uses a per-provider cache with the same TTL as the combined cache.
+        An expired entry is served while a background rebuild runs.
         Returns empty bytes if the provider has no EPG source or no channels.
         """
         provider_name = provider_name.lower().strip()
@@ -268,13 +301,20 @@ class EPGAggregator:
             return b""
 
         with self.cache_lock:
-            if (
-                provider_name in self._provider_cache
-                and time.time() < self._provider_expiry.get(provider_name, 0)
-            ):
-                logger.debug(f"Returning cached EPG for provider: {provider_name}")
-                return self._provider_cache[provider_name]
+            cached = self._provider_cache.get(provider_name)
+            valid  = cached is not None and time.time() < self._provider_expiry.get(provider_name, 0)
 
+        if cached is not None:
+            if valid:
+                logger.debug(f"Returning cached EPG for provider: {provider_name}")
+            else:
+                self._refresh_provider_in_background(provider_name)
+            return cached
+
+        return self._build_provider_epg(provider_name)
+
+    def _build_provider_epg(self, provider_name: str) -> bytes:
+        """Fetch, filter and cache a single provider's XMLTV (UTF-8 bytes)."""
         tvg_ids = self._get_tvg_ids(provider_name)
         if tvg_ids is not None and not tvg_ids:
             logger.warning(f"No channels in the channel list for provider: {provider_name}")
@@ -299,9 +339,19 @@ class EPGAggregator:
             f"{len(channels)} channels, {len(programmes)} programmes"
         )
 
+        gz_key = f"{provider_name}_gz"
+
         with self.cache_lock:
             self._provider_cache[provider_name]  = provider_xml
             self._provider_expiry[provider_name] = time.time() + self.cache_duration
+            has_gz = gz_key in self._provider_cache
+
+        # Keep a previously requested gzip copy in step with the plain one
+        if has_gz:
+            gz = gzip.compress(provider_xml, compresslevel=6)
+            with self.cache_lock:
+                self._provider_cache[gz_key]  = gz
+                self._provider_expiry[gz_key] = time.time() + self.cache_duration
 
         return provider_xml
 
@@ -315,11 +365,13 @@ class EPGAggregator:
         # Check compressed provider cache
         gz_key = f"{provider_name}_gz"
         with self.cache_lock:
-            if (
-                gz_key in self._provider_cache
-                and time.time() < self._provider_expiry.get(gz_key, 0)
-            ):
-                return self._provider_cache[gz_key]
+            cached = self._provider_cache.get(gz_key)
+            valid  = cached is not None and time.time() < self._provider_expiry.get(gz_key, 0)
+
+        if cached is not None:
+            if not valid:
+                self._refresh_provider_in_background(provider_name)
+            return cached
 
         # Fetch/reuse plain XML then compress
         xml = self.get_provider_epg(provider_name)
@@ -333,6 +385,77 @@ class EPGAggregator:
             self._provider_expiry[gz_key] = time.time() + self.cache_duration
 
         return gz
+
+    def _refresh_combined_in_background(self) -> None:
+        """Start a single background rebuild of the combined EPG; does nothing if one is running."""
+        with self.cache_lock:
+            if self._refreshing:
+                return
+            self._refreshing = True
+
+        def _worker():
+            try:
+                logger.info("EPG cache expired - serving stale, rebuilding in background...")
+                self._build_combined_epg()
+            except Exception as exc:
+                logger.error(f"EPG background rebuild error: {exc}")
+            finally:
+                with self.cache_lock:
+                    self._refreshing = False
+
+        threading.Thread(target=_worker, daemon=True, name='epg-stale-refresh').start()
+
+    def _refresh_provider_in_background(self, provider_name: str) -> None:
+        """Start a single background rebuild of one provider's EPG; does nothing if one is running."""
+        with self.cache_lock:
+            if provider_name in self._provider_refreshing:
+                return
+            self._provider_refreshing.add(provider_name)
+
+        def _worker():
+            try:
+                logger.info(f"Provider EPG [{provider_name}] expired - serving stale, rebuilding in background...")
+                self._build_provider_epg(provider_name)
+            except Exception as exc:
+                logger.error(f"Provider EPG [{provider_name}] background rebuild error: {exc}")
+            finally:
+                with self.cache_lock:
+                    self._provider_refreshing.discard(provider_name)
+
+        threading.Thread(target=_worker, daemon=True, name=f'epg-refresh-{provider_name}').start()
+
+    def start_background_refresh(self) -> None:
+        """Start the EPG refresh daemon thread (once); rebuilds the combined EPG at 75% of its TTL."""
+        with self.cache_lock:
+            if self._bg_started:
+                return
+            self._bg_started = True
+
+        # check often enough that the 75% mark always lands before expiry
+        interval = min(300, self.cache_duration * 0.25)
+
+        def _worker():
+            while True:
+                try:
+                    time.sleep(interval)
+
+                    # nothing cached yet is left to the warmer / first request
+                    with self.cache_lock:
+                        built = self.cache is not None
+                        age   = time.time() - (self.cache_expiry - self.cache_duration) if built else 0
+                        stale = built and age > (self.cache_duration * 0.75)
+
+                    if stale:
+                        logger.info("EPG background refresh starting...")
+                        t = time.time()
+                        self._build_combined_epg(force_refresh=True)
+                        logger.info(f"EPG background refresh done in {time.time() - t:.1f}s")
+
+                except Exception as exc:
+                    logger.error(f"EPG background refresh error: {exc}")
+
+        threading.Thread(target=_worker, daemon=True, name='epg-bg-refresh').start()
+        logger.info("EPG background refresh thread started")
 
     def clear_cache(self) -> None:
         """Clear all EPG caches (combined and per-provider)."""
