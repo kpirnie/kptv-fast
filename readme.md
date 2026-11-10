@@ -343,7 +343,7 @@ cd kptv-fast
 docker build -t kptv_fast:local .
 ```
 
-The Dockerfile uses a two-stage Alpine build. The builder stage compiles Python packages with `gcc`/`cargo`; the runtime stage copies the venv and runs as non-root `appuser` (UID 1000).
+The Dockerfile uses a two-stage Alpine build. The builder stage compiles Python packages with `gcc`; the runtime stage copies the venv and runs as non-root `appuser` (UID 1000).
 
 ---
 
