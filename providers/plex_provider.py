@@ -4,6 +4,7 @@ Plex Provider Implementation
 
 import json
 import uuid
+import concurrent.futures
 import gzip
 import os
 import time
@@ -148,17 +149,36 @@ class PlexProvider(BaseProvider):
             # Get channels for each genre
             processed_channels = []
             
+            # Fetch each genre's channel list concurrently, merged below in genre order
+            def fetch_genre(genre_id, genre_name):
+                channels_url = f'https://epg.provider.plex.tv/lineups/plex/channels?genre={genre_id}'
+                
+                response = self.session.get(channels_url, params=params, headers=headers, timeout=self.get_timeout())
+                if response.status_code != 200:
+                    self.logger.warning(f"Failed to get channels for genre {genre_name}: {response.status_code}")
+                    return []
+                
+                return response.json().get("MediaContainer", {}).get("Channel", [])
+            
+            genre_channels = {}
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(genres)))
+            try:
+                futures = {executor.submit(fetch_genre, genre_id, genre_name): genre_id for genre_id, genre_name in genres.items()}
+                
+                for future in concurrent.futures.as_completed(futures, timeout=60):
+                    genre_id = futures[future]
+                    try:
+                        genre_channels[genre_id] = future.result()
+                    except Exception as e:
+                        self.logger.warning(f"Error fetching channels for genre {genres[genre_id]}: {e}")
+            except concurrent.futures.TimeoutError:
+                self.logger.warning(f"Plex: timed out, keeping {len(genre_channels)} of {len(genres)} genre lists collected so far")
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+            
             for genre_id, genre_name in genres.items():
                 try:
-                    channels_url = f'https://epg.provider.plex.tv/lineups/plex/channels?genre={genre_id}'
-                    
-                    response = self.session.get(channels_url, params=params, headers=headers, timeout=self.get_timeout())
-                    if response.status_code != 200:
-                        self.logger.warning(f"Failed to get channels for genre {genre_name}: {response.status_code}")
-                        continue
-                    
-                    channel_data = response.json()
-                    channels = channel_data.get("MediaContainer", {}).get("Channel", [])
+                    channels = genre_channels.get(genre_id)
                     
                     if not channels:
                         continue
