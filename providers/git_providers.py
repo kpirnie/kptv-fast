@@ -295,7 +295,8 @@ class GitIptvProvider(BaseProvider):
             all_channels = []
             max_workers = min(5, len(m3u_files))  # Limit concurrent requests
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 futures = [executor.submit(self._fetch_and_parse_m3u, file_info) for file_info in m3u_files]
                 
                 for future in concurrent.futures.as_completed(futures, timeout=60):
@@ -305,6 +306,10 @@ class GitIptvProvider(BaseProvider):
                     except Exception as e:
                         self.logger.warning(f"Error processing M3U file: {e}")
                         continue
+            except concurrent.futures.TimeoutError:
+                self.logger.warning(f"Git IPTV: timed out, keeping {len(all_channels)} channels collected so far")
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
             
             elapsed = time.time() - start_time
             self.logger.info(f"Successfully processed {len(all_channels)} Git IPTV channels")
@@ -612,7 +617,8 @@ class GitFreetvProvider(BaseProvider):
             all_channels = []
             max_workers = min(5, len(m3u_files))
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+            try:
                 futures = [executor.submit(self._fetch_and_parse_m3u, file_info) for file_info in m3u_files]
                 
                 for future in concurrent.futures.as_completed(futures, timeout=60):
@@ -622,6 +628,10 @@ class GitFreetvProvider(BaseProvider):
                     except Exception as e:
                         self.logger.warning(f"Error processing M3U8 file: {e}")
                         continue
+            except concurrent.futures.TimeoutError:
+                self.logger.warning(f"Git Free TV: timed out, keeping {len(all_channels)} channels collected so far")
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
             
             elapsed = time.time() - start_time
             self.logger.info(f"Successfully processed {len(all_channels)} Git Free TV channels in {elapsed:.1f}s")
