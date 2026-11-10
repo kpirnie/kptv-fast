@@ -6,6 +6,7 @@ import json
 import logging
 from flask import Blueprint, Response, request
 
+from core.channel_manager import channel_tvg_id
 from utils.epg_aggregator import get_epg_aggregator
 
 logger = logging.getLogger(__name__)
@@ -41,10 +42,7 @@ def create_blueprint(channel_manager) -> Blueprint:
             for ch in channels:
                 attrs = []
                 # Strip provider prefix from tvg-id (e.g. "samsung-" from "samsung-US390001557")
-                ch_id    = ch.get('id', '')
-                provider = ch.get('provider', '')
-                if provider and ch_id.startswith(f'{provider}-'):
-                    ch_id = ch_id[len(provider) + 1:]
+                ch_id = channel_tvg_id(ch)
                 if ch_id: attrs.append(f'tvg-id="{_attr(ch_id)}"')
                 if ch.get('name'):           attrs.append(f'tvg-name="{_attr(ch["name"])}"')
                 if ch.get('logo'):           attrs.append(f'tvg-logo="{_attr(ch["logo"])}"')

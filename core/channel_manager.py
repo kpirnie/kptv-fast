@@ -14,6 +14,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def channel_tvg_id(ch: dict) -> str:
+    """Return a channel's tvg-id: its id without the "<provider>-" prefix."""
+    ch_id    = ch.get('id', '')
+    provider = ch.get('provider', '')
+    if provider and ch_id.startswith(f'{provider}-'):
+        ch_id = ch_id[len(provider) + 1:]
+    return ch_id
+
+
 class ChannelManager:
     """
     Owns the channel cache and all logic for fetching, filtering,
@@ -106,6 +115,19 @@ class ChannelManager:
             return cached
 
         return self._get_all_channels_concurrent()
+
+    def get_tvg_ids(self, provider: str = '') -> set:
+        """
+        Return the tvg-ids of the channel list, optionally for one provider.
+
+        Blocks on a fetch only when nothing is cached yet.
+        """
+        provider = provider.lower().strip()
+        return {
+            channel_tvg_id(ch)
+            for ch in self.get_all_channels()
+            if not provider or ch.get('provider', '').lower() == provider
+        }
 
     def _refresh_in_background(self) -> None:
         """Start a single background refresh; does nothing if one is already running."""

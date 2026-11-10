@@ -54,6 +54,9 @@ class UnifiedStreamingAggregator:
         )
         self.max_workers = self.channel_manager.max_workers
 
+        # EPG is filtered to the channel list
+        get_epg_aggregator().set_channel_manager(self.channel_manager)
+
         # Config snapshot passed into status/debug blueprints (read-only display)
         self._config_snapshot = {
             'cache_duration':   self.channel_manager.cache_duration,

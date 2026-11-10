@@ -4,12 +4,14 @@ EPG Aggregator - Downloads and combines EPG sources into single XMLTV
 
 import requests
 import gzip
+import html
 import re
 import time
 import threading
 import concurrent.futures
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +20,19 @@ class EPGAggregator:
     """Downloads and combines external EPG sources into single XMLTV"""
 
     def __init__(self):
-        self.cache        = None
+        self.cache        = None  # combined XMLTV, UTF-8 encoded
         self.cache_gz     = None
         self.cache_expiry = 0
         self.cache_lock   = threading.Lock()
         self._build_lock  = threading.Lock()
-        self.fetch_workers = 4  # concurrent source downloads
         self.cache_duration = 3600  # 1 hour
 
-        # Per-provider cache: provider_name → xml string
+        # Per-provider cache: provider_name → xml bytes
         self._provider_cache:  dict = {}
         self._provider_expiry: dict = {}
+
+        # Set by the aggregator so the guide can be filtered to the channel list
+        self._channel_manager = None
 
         self.epg_sources = {
             'plex':     'https://i.mjh.nz/Plex/all.xml',
@@ -40,6 +44,8 @@ class EPGAggregator:
             'roku':     'https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml',
             'localnow': 'https://raw.githubusercontent.com/BuddyChewChew/localnow-playlist-generator/refs/heads/main/epg.xml',
         }
+
+        self.fetch_workers = len(self.epg_sources)  # concurrent source downloads
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -71,25 +77,44 @@ class EPGAggregator:
             logger.error(f"Failed to fetch EPG {name}: {e}")
             return ""
 
-    def _extract_content(self, xml_text: str) -> tuple:
-        """Extract channel and programme blocks from XMLTV as raw strings."""
+    def _extract_content(self, xml_text: str, tvg_ids: Optional[set] = None) -> tuple:
+        """
+        Extract channel and programme blocks from XMLTV as (id, raw block) pairs.
+
+        When tvg_ids is given, blocks whose id / channel isn't in it are dropped.
+        """
         channels   = []
         programmes = []
 
         try:
             channel_pattern   = re.compile(r'<channel\s[^>]*>.*?</channel>',   re.DOTALL)
             programme_pattern = re.compile(r'<programme\s[^>]*>.*?</programme>', re.DOTALL)
+            channel_id_re     = re.compile(r'id="([^"]+)"')
+            programme_ch_re   = re.compile(r'<programme(?=\s)[^>]*?\schannel="([^"]*)"')
 
-            channels   = channel_pattern.findall(xml_text)
-            programmes = programme_pattern.findall(xml_text)
+            for match in channel_pattern.finditer(xml_text):
+                block    = match.group(0)
+                id_match = channel_id_re.search(block)
+                ch_id    = html.unescape(id_match.group(1)) if id_match else ''
+                if tvg_ids is not None and ch_id not in tvg_ids:
+                    continue
+                channels.append((ch_id, block))
+
+            for match in programme_pattern.finditer(xml_text):
+                block    = match.group(0)
+                id_match = programme_ch_re.match(block)
+                pr_id    = html.unescape(id_match.group(1)) if id_match else ''
+                if tvg_ids is not None and pr_id not in tvg_ids:
+                    continue
+                programmes.append((pr_id, block))
 
         except Exception as e:
             logger.error(f"Error extracting EPG content: {e}")
 
         return channels, programmes
 
-    def _build_xml(self, channels: list, programmes: list) -> str:
-        """Wrap channel and programme blocks in a valid XMLTV envelope."""
+    def _build_xml(self, channels: list, programmes: list) -> bytes:
+        """Wrap channel and programme blocks in a valid XMLTV envelope (UTF-8 bytes)."""
         parts = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             '<!DOCTYPE tv SYSTEM "xmltv.dtd">',
@@ -98,12 +123,27 @@ class EPGAggregator:
         parts.extend(channels)
         parts.extend(programmes)
         parts.append('</tv>')
-        return '\n'.join(parts)
+        return '\n'.join(parts).encode('utf-8')
+
+    def _get_tvg_ids(self, provider_name: str = '') -> Optional[set]:
+        """
+        Return the tvg-ids in the channel list (optionally for one provider).
+
+        Returns None when no channel manager is attached (no filtering).
+        Blocks on a channel fetch only if no channels are cached yet.
+        """
+        if self._channel_manager is None:
+            return None
+        return self._channel_manager.get_tvg_ids(provider_name)
 
     # ── Public interface ──────────────────────────────────────────────────────
 
-    def get_combined_epg(self, force_refresh: bool = False) -> str:
-        """Return combined XMLTV from all sources, using cache when valid."""
+    def set_channel_manager(self, channel_manager) -> None:
+        """Attach the channel manager so the guide is filtered to the channel list."""
+        self._channel_manager = channel_manager
+
+    def get_combined_epg(self, force_refresh: bool = False) -> bytes:
+        """Return combined XMLTV (UTF-8 bytes) from all sources, using cache when valid."""
         with self.cache_lock:
             if not force_refresh and self.cache and time.time() < self.cache_expiry:
                 logger.debug("Returning cached EPG")
@@ -116,12 +156,25 @@ class EPGAggregator:
                 if not force_refresh and self.cache and time.time() < self.cache_expiry:
                     return self.cache
 
+            # Only keep what is actually in the playlist
+            tvg_ids = self._get_tvg_ids()
+            if tvg_ids is not None and not tvg_ids:
+                logger.warning("No channels available — skipping EPG build")
+                with self.cache_lock:
+                    stale = self.cache
+                return stale or self._build_xml([], [])
+
             logger.info("Building combined EPG...")
             start_time = time.time()
 
             # Fetch + extract inside the worker so each raw XML string is released as soon as it's parsed
             def _fetch_and_extract(name: str, url: str) -> tuple:
-                return self._extract_content(self._fetch_source(name, url))
+                return self._extract_content(self._fetch_source(name, url), tvg_ids)
+
+            all_channels   = []
+            all_programmes = []
+            seen_channel_ids: set = set()
+            claimed: dict = {}
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.fetch_workers) as executor:
                 futures = {
@@ -129,38 +182,58 @@ class EPGAggregator:
                     for name, url in self.epg_sources.items()
                 }
 
-            all_channels   = []
-            all_programmes = []
-            seen_channel_ids: set = set()
+                # Merge in source order so dedup stays deterministic
+                for name in list(futures):
+                    channels, programmes = futures.pop(name).result()
+                    if not channels and not programmes:
+                        continue
 
-            # Merge in source order so dedup stays deterministic
-            for name in list(futures):
-                channels, programmes = futures.pop(name).result()
-                if not channels and not programmes:
-                    continue
+                    kept_channels   = 0
+                    kept_programmes = 0
 
-                for ch in channels:
-                    id_match = re.search(r'id="([^"]+)"', ch)
-                    if id_match:
-                        ch_id = id_match.group(1)
+                    # An id belongs to the first source that provides it
+                    for ch_id, ch in channels:
+                        if not ch_id:
+                            continue
+                        claimed.setdefault(ch_id, name)
                         if ch_id not in seen_channel_ids:
                             seen_channel_ids.add(ch_id)
                             all_channels.append(ch)
+                            kept_channels += 1
 
-                all_programmes.extend(programmes)
-                logger.info(f"  {name}: {len(channels)} channels, {len(programmes)} programmes")
+                    # Programmes only come from the source that owns the id
+                    for pr_id, pr in programmes:
+                        if claimed.setdefault(pr_id, name) == name:
+                            all_programmes.append(pr)
+                            kept_programmes += 1
+
+                    logger.info(f"  {name}: {kept_channels} channels, {kept_programmes} programmes")
+                    del channels, programmes
+
+            # Never replace a good cache with an empty guide
+            if not all_channels and not all_programmes:
+                logger.warning("EPG build produced no data — keeping previous cache")
+                with self.cache_lock:
+                    stale = self.cache
+                return stale or self._build_xml([], [])
+
+            channel_count   = len(all_channels)
+            programme_count = len(all_programmes)
 
             combined_xml = self._build_xml(all_channels, all_programmes)
-            elapsed      = time.time() - start_time
+            del all_channels, all_programmes
+
+            combined_gz = gzip.compress(combined_xml, compresslevel=6)
+            elapsed     = time.time() - start_time
 
             logger.info(
-                f"Combined EPG: {len(all_channels)} channels, "
-                f"{len(all_programmes)} programmes in {elapsed:.1f}s"
+                f"Combined EPG: {channel_count} channels, "
+                f"{programme_count} programmes in {elapsed:.1f}s"
             )
 
             with self.cache_lock:
                 self.cache        = combined_xml
-                self.cache_gz     = gzip.compress(combined_xml.encode('utf-8'))
+                self.cache_gz     = combined_gz
                 self.cache_expiry = time.time() + self.cache_duration
 
             return combined_xml
@@ -171,23 +244,28 @@ class EPGAggregator:
             if not force_refresh and self.cache_gz and time.time() < self.cache_expiry:
                 return self.cache_gz
 
-        self.get_combined_epg(force_refresh)
+        xml = self.get_combined_epg(force_refresh)
 
         with self.cache_lock:
-            return self.cache_gz
+            if self.cache_gz:
+                return self.cache_gz
 
-    def get_provider_epg(self, provider_name: str) -> str:
+        # Nothing was cached (empty channel list / no data) — compress what was built
+        return gzip.compress(xml, compresslevel=6)
+
+    def get_provider_epg(self, provider_name: str) -> bytes:
         """
-        Return a single-provider XMLTV string.
+        Return a single-provider XMLTV (UTF-8 bytes), filtered to that
+        provider's channels in the channel list.
 
         Uses a per-provider cache with the same TTL as the combined cache.
-        Returns an empty string if the provider has no EPG source.
+        Returns empty bytes if the provider has no EPG source or no channels.
         """
         provider_name = provider_name.lower().strip()
 
         if provider_name not in self.epg_sources:
             logger.warning(f"No EPG source configured for provider: {provider_name}")
-            return ""
+            return b""
 
         with self.cache_lock:
             if (
@@ -197,14 +275,24 @@ class EPGAggregator:
                 logger.debug(f"Returning cached EPG for provider: {provider_name}")
                 return self._provider_cache[provider_name]
 
+        tvg_ids = self._get_tvg_ids(provider_name)
+        if tvg_ids is not None and not tvg_ids:
+            logger.warning(f"No channels in the channel list for provider: {provider_name}")
+            return b""
+
         url      = self.epg_sources[provider_name]
         xml_text = self._fetch_source(provider_name, url)
 
         if not xml_text:
-            return ""
+            return b""
 
-        channels, programmes = self._extract_content(xml_text)
-        provider_xml         = self._build_xml(channels, programmes)
+        channels, programmes = self._extract_content(xml_text, tvg_ids)
+        del xml_text
+
+        provider_xml = self._build_xml(
+            [ch for _, ch in channels],
+            [pr for _, pr in programmes],
+        )
 
         logger.info(
             f"Provider EPG [{provider_name}]: "
@@ -238,7 +326,7 @@ class EPGAggregator:
         if not xml:
             return b""
 
-        gz = gzip.compress(xml.encode('utf-8'))
+        gz = gzip.compress(xml, compresslevel=6)
 
         with self.cache_lock:
             self._provider_cache[gz_key]  = gz
