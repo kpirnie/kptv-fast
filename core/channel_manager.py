@@ -296,10 +296,13 @@ class ChannelManager:
 
     def _start_background_refresh(self) -> None:
         """Spawn a daemon thread that pre-refreshes the channel cache at 75% TTL."""
+        # check often enough that the 75% mark always lands before expiry
+        interval = min(300, self.cache_duration * 0.25)
+
         def _worker():
             while True:
                 try:
-                    time.sleep(300)
+                    time.sleep(interval)
 
                     with self._cache_lock:
                         now    = time.time()
@@ -314,8 +317,6 @@ class ChannelManager:
 
                 except Exception as exc:
                     logger.error(f"Background refresh error: {exc}")
-
-                time.sleep(900)
 
         threading.Thread(
             target=_worker,
