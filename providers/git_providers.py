@@ -99,28 +99,24 @@ class GitIptvProvider(BaseProvider):
         return mapping
     
     def _matches_country_filter(self, filename: str) -> bool:
-        """Check if filename matches country filter"""
+        """Check if filename matches country filter - iptv-org uses <country>_<name>.m3u format"""
         if not self.country_filter:
             return True
         
+        # Country part of the filename, e.g. 'us_pluto.m3u' -> 'us'
         filename_lower = filename.lower()
+        if filename_lower.endswith('.m3u'):
+            filename_lower = filename_lower[:-4]
+        country_part = filename_lower.split('_')[0]
         
-        # Check direct matches first
-        for country in self.country_filter:
-            if country in filename_lower:
-                return True
-        
-        # Check mapped country codes
+        # Accept the filter values plus every code/variant of the countries they name
+        accepted = set(self.country_filter)
         for code, variants in self.country_mapping.items():
             if any(variant in self.country_filter for variant in variants):
-                # Check if this country code appears in filename
-                if code in filename_lower:
-                    return True
-                # Also check for the variants in filename
-                if any(variant in filename_lower for variant in variants):
-                    return True
+                accepted.add(code)
+                accepted.update(variants)
         
-        return False
+        return country_part in accepted
     
     def _fetch_github_directory(self, api_url: str) -> List[Dict]:
         """Fetch directory listing from GitHub API with caching"""
@@ -412,46 +408,22 @@ class GitFreetvProvider(BaseProvider):
         if not self.country_filter:
             return True
         
+        # Country part of the filename, e.g. 'playlist_usa_vod.m3u8' -> 'usa'
         filename_lower = filename.lower()
+        if filename_lower.startswith('playlist_'):
+            filename_lower = filename_lower[9:]
+        if filename_lower.endswith('.m3u8'):
+            filename_lower = filename_lower[:-5]
+        country_part = filename_lower.split('_')[0]
         
-        # Remove 'playlist_' prefix and '.m3u8' suffix to get the country part
-        if filename_lower.startswith('playlist_') and filename_lower.endswith('.m3u8'):
-            country_part = filename_lower[9:-5]  # Remove 'playlist_' and '.m3u8'
-            
-            # Handle cases like 'usa_vod' -> 'usa'
-            if '_' in country_part:
-                country_part = country_part.split('_')[0]
-            
-            # Check direct matches first
-            for country in self.country_filter:
-                if country == country_part:
-                    return True
-            
-            # Check mapped country codes
-            for code, variants in self.country_mapping.items():
-                if any(variant in self.country_filter for variant in variants):
-                    # Check if this country code matches the filename country part
-                    if code == country_part:
-                        return True
-                    # Also check for the variants matching country part
-                    if any(variant == country_part for variant in variants):
-                        return True
-        
-        # Fallback to original matching for other patterns
-        # Check direct matches first
-        for country in self.country_filter:
-            if country in filename_lower:
-                return True
-        
-        # Check mapped country codes
+        # Accept the filter values plus every code/variant of the countries they name
+        accepted = set(self.country_filter)
         for code, variants in self.country_mapping.items():
             if any(variant in self.country_filter for variant in variants):
-                if code in filename_lower:
-                    return True
-                if any(variant in filename_lower for variant in variants):
-                    return True
+                accepted.add(code)
+                accepted.update(variants)
         
-        return False
+        return country_part in accepted
     
     def _fetch_github_directory(self, api_url: str) -> List[Dict]:
         """Fetch directory listing from GitHub API with caching"""
