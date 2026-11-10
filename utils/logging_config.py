@@ -29,7 +29,6 @@ def setup_logging():
         logging.getLogger('urllib3').setLevel(logging.WARNING)
         logging.getLogger('requests').setLevel(logging.WARNING)
         logging.getLogger('gevent').setLevel(logging.WARNING)
-        logging.getLogger('bs4').setLevel(logging.WARNING)
     
     return DEBUG_MODE
 

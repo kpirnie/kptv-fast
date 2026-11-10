@@ -2,8 +2,8 @@
 Tubi Provider Implementation - Based on Working tubi-for-channels repo
 """
 
-import requests
 import json
+import concurrent.futures
 import uuid
 import time
 import os
@@ -53,12 +53,9 @@ class TubiProvider(BaseProvider):
         error = None
         
         try:
-            session = requests.Session()
-            response = session.get(url, headers=self.headers, timeout=self.get_timeout())
+            response = self.session.get(url, headers=self.headers, timeout=self.get_timeout())
         except Exception as e:
             error = f"channel_id_list_anon Exception: {type(e).__name__}"
-        finally:
-            session.close()
 
         if error: 
             return None, None, error
@@ -68,23 +65,18 @@ class TubiProvider(BaseProvider):
         
         html_content = response.text
 
-        # Use BeautifulSoup to parse HTML (this is what the working implementation uses)
+        # Locate the <script> block that opens with window.__data
         try:
-            from bs4 import BeautifulSoup # type: ignore
-            soup = BeautifulSoup(html_content, "html.parser")
-            
-            # Find all <script> tags
-            script_tags = soup.find_all("script")
-            
-            # Look for the script starting with "window.__data"
-            target_script = None
-            for script in script_tags:
-                if script.string and script.string.strip().startswith("window.__data"):
-                    target_script = script.string
-                    break
-            
-            if target_script is None:
+            script_match = re.search(r'<script[^>]*>\s*(window\.__data)', html_content)
+            if not script_match:
                 return None, None, "Error: No window.__data script found"
+            
+            # Bound the script's contents by its closing tag
+            script_start = script_match.start(1)
+            script_end = html_content.find("</script>", script_start)
+            if script_end == -1:
+                script_end = len(html_content)
+            target_script = html_content[script_start:script_end]
             
             # Extract JSON part from the string
             start_index = target_script.find("{")
@@ -133,49 +125,9 @@ class TubiProvider(BaseProvider):
             
             return channel_list, groups, None
             
-        except ImportError:
-            # Fallback to regex parsing if BeautifulSoup not available
-            return self._fallback_regex_parsing(html_content)
         except Exception as e:
             self.logger.error(f"Error in channel_id_list_anon: {e}")
             return None, None, str(e)
-    
-    def _fallback_regex_parsing(self, html_content):
-        """Fallback method using regex if BeautifulSoup is not available"""
-        try:
-            # Look for window.__data with regex
-            data_match = re.search(r'window\.__data\s*=\s*({.+?});', html_content, re.DOTALL)
-            if not data_match:
-                return None, None, "Could not find window.__data with regex"
-            
-            json_string = data_match.group(1)
-            json_string = re.sub(r'\bundefined\b', 'null', json_string)
-            
-            data_json = json.loads(json_string)
-            epg = data_json.get('epg', {})
-            contentIdsByContainer = epg.get('contentIdsByContainer', {})
-            
-            skip_slugs = ['favorite_linear_channels', 'recommended_linear_channels', 'featured_channels', 'recently_added_channels']
-            
-            channel_list = []
-            for key in contentIdsByContainer.keys():
-                for item in contentIdsByContainer[key]:
-                    if item['container_slug'] not in skip_slugs:
-                        channel_list.extend(item["contents"])
-            
-            channel_list = list(set(channel_list))
-            
-            # Extract group information
-            group_listing = contentIdsByContainer.get("tubitv_us_linear", [])
-            groups = {}
-            for elem in group_listing:
-                if elem["container_slug"] not in skip_slugs:
-                    groups.update({elem['name']: elem['contents']})
-            
-            return channel_list, groups, None
-            
-        except Exception as e:
-            return None, None, f"Fallback parsing failed: {e}"
     
     def read_epg_anon(self):
         """Get EPG data anonymously - based on working implementation"""
@@ -191,30 +143,46 @@ class TubiProvider(BaseProvider):
         group_size = 150
         grouped_id_values = [channel_id_list[i:i + group_size] for i in range(0, len(channel_id_list), group_size)]
 
-        for group in grouped_id_values:
-            try:
-                session = requests.Session()
-                params = {"content_id": ','.join(map(str, group))}
-                
-                response = session.get('https://tubitv.com/oz/epg/programming', params=params, headers=self.headers, timeout=self.get_timeout())
-                session.close()
-                
-                if response.status_code != 200:
-                    self.logger.warning(f"EPG API failed for batch: {response.status_code}")
-                    continue
-
-                js = response.json()
-                epg_data.extend(js.get('rows', []))
-                
-            except Exception as e:
-                self.logger.warning(f"Error processing EPG batch: {e}")
-                continue
+        def fetch_batch(group):
+            params = {"content_id": ','.join(map(str, group))}
+            
+            response = self.session.get('https://tubitv.com/oz/epg/programming', params=params, headers=self.headers, timeout=self.get_timeout())
+            if response.status_code != 200:
+                self.logger.warning(f"EPG API failed for batch: {response.status_code}")
+                return []
+            
+            return response.json().get('rows', [])
+        
+        batch_rows = {}
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(4, len(grouped_id_values))))
+        try:
+            futures = {executor.submit(fetch_batch, group): index for index, group in enumerate(grouped_id_values)}
+            
+            for future in concurrent.futures.as_completed(futures, timeout=60):
+                try:
+                    batch_rows[futures[future]] = future.result()
+                except Exception as e:
+                    self.logger.warning(f"Error processing EPG batch: {e}")
+        except concurrent.futures.TimeoutError:
+            self.logger.warning(f"Tubi: timed out, keeping {len(batch_rows)} of {len(grouped_id_values)} EPG batches collected so far")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        
+        # Merge in batch order so the output stays deterministic
+        for index in sorted(batch_rows):
+            epg_data.extend(batch_rows[index])
 
         # Handle channels with no video resources
         for elem in epg_data:
             if elem.get('video_resources') == []:
                 self.logger.warning(f"No Video Data for {elem.get('title', '')}")
                 elem['video_resources'] = [{"manifest": {"url": ""}}]
+
+        # Map each content id to the groups it belongs to
+        id_groups = {}
+        for group_name, values in (groups or {}).items():
+            for value in set(values):
+                id_groups.setdefault(value, []).append(group_name)
 
         # Create channel list in the format expected
         channel_list = []
@@ -252,7 +220,7 @@ class TubiProvider(BaseProvider):
                 
                 # Add group information
                 id = content_id
-                g_list = [key for key, values in groups.items() if id in values] if groups else []
+                g_list = id_groups.get(id, [])
                 channel_info['group'] = g_list
                 
                 channel_list.append(channel_info)
