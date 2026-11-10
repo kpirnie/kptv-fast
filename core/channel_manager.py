@@ -194,7 +194,6 @@ class ChannelManager:
             start = time.time()
 
             all_channels: list = []
-            channel_number     = 1
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_map = {
@@ -206,16 +205,17 @@ class ChannelManager:
                     try:
                         result = future.result()
                         if result:
+                            # copy — providers hand back their own cached dicts
                             for ch in result:
-                                ch['provider']       = name
-                                ch['channel_number'] = ch.get('number', channel_number)
-                                channel_number += 1
-                            all_channels.extend(result)
+                                ch             = dict(ch)
+                                ch['provider'] = name
+                                all_channels.append(ch)
                     except Exception as exc:
                         logger.error(f"Error collecting results from {name}: {exc}")
 
             all_channels = self._apply_filters(all_channels)
             all_channels = self._remove_duplicates(all_channels)
+            all_channels = self._assign_channel_numbers(all_channels)
             all_channels.sort(key=lambda x: x.get('channel_number', 999999))
 
             # never replace a good cache with an empty result
@@ -268,6 +268,68 @@ class ChannelManager:
             if self.debug_mode:
                 logger.debug(traceback.format_exc())
             return []
+
+    # ── Numbering ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _native_number(ch: dict):
+        """Return a channel's own number as a positive int, or None if it has no usable one."""
+        value = ch.get('number')
+        if isinstance(value, bool):
+            return None
+
+        try:
+            number = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+        return number if number > 0 else None
+
+    def _assign_channel_numbers(self, channels: list) -> list:
+        """
+        Give every channel a unique, deterministic channel_number.
+
+        Providers are handled alphabetically. Native numbers go first; a number
+        that is already taken is bumped to the next free one above it. Channels
+        with no native number then take the lowest unused numbers from 1.
+        """
+        by_provider: dict = {}
+        for ch in channels:
+            by_provider.setdefault(ch.get('provider', ''), []).append(ch)
+
+        used:       set  = set()
+        unnumbered: list = []
+
+        for provider in sorted(by_provider):
+            native: list = []
+            others: list = []
+
+            for ch in by_provider[provider]:
+                number = self._native_number(ch)
+                if number:
+                    native.append((number, ch))
+                else:
+                    others.append(ch)
+
+            native.sort(key=lambda item: (item[0], str(item[1].get('name', '')).lower(), str(item[1].get('id', ''))))
+            others.sort(key=lambda ch: (str(ch.get('name', '')).lower(), str(ch.get('id', ''))))
+
+            for number, ch in native:
+                while number in used:
+                    number += 1
+                used.add(number)
+                ch['channel_number'] = number
+
+            unnumbered.extend(others)
+
+        number = 1
+        for ch in unnumbered:
+            while number in used:
+                number += 1
+            used.add(number)
+            ch['channel_number'] = number
+
+        return channels
 
     # ── Filtering ─────────────────────────────────────────────────────────────
 
