@@ -2,7 +2,7 @@
 Philo Provider
 ==============
 Serves Philo's free (110+) or paid (70+) live channels.
-Stream URLs are resolved concurrently when the channel list is refreshed.
+Stream URLs are resolved at play time via /play/philo/<callsign>.
 
 """
 
@@ -10,7 +10,6 @@ import os
 import time
 import uuid
 import threading
-import concurrent.futures
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base_provider import BaseProvider
@@ -166,8 +165,8 @@ class PhiloProvider(BaseProvider):
     """
     Philo free (and optionally paid) FAST channel provider.
 
-    Direct HLS URLs are resolved at M3U8 generation time and cached for
-    PHILO_STREAM_TTL seconds. No proxy route is required.
+    Direct HLS URLs are resolved at play time via /play/philo/<callsign>
+    and cached per channel for 30 minutes.
     """
 
     def __init__(self):
@@ -186,7 +185,6 @@ class PhiloProvider(BaseProvider):
         self._channel_cache_ttl = 3600
         self._stream_ttl        = 1800
         self._session_ttl       = 7200
-        self._stream_workers    = 10
 
         self._philo_session = _PhiloSession(
             logger=self.logger,
@@ -196,6 +194,9 @@ class PhiloProvider(BaseProvider):
         # Channel metadata cache
         self._channels_meta: List[Dict[str, Any]] = []
         self._channel_cache_expiry: float = 0.0
+
+        # callsign -> channel_id_b64 for play-time resolution
+        self._channel_ids: Dict[str, str] = {}
 
         # Per-callsign stream URL cache: {callsign: {"hls_url": str, "expiry": float}}
         self._stream_cache: Dict[str, Dict[str, Any]] = {}
@@ -279,7 +280,7 @@ class PhiloProvider(BaseProvider):
                 channel = {
                     "id":          f"philo-{callsign.lower()}",
                     "name":        display_name,
-                    "stream_url":  "",   # populated later
+                    "stream_url":  f"/play/philo/{callsign}",
                     "logo":        logo,
                     "group":       group,
                     "number":      None,
@@ -289,7 +290,9 @@ class PhiloProvider(BaseProvider):
                     "_channel_id": channel_id_b64,
                 }
 
-                # skip validate_channel here — stream_url is empty until _resolve_all runs
+                if not self.validate_channel(channel):
+                    continue
+
                 norm = self.normalize_channel(channel)
                 norm["_callsign"]   = callsign
                 norm["_channel_id"] = channel_id_b64
@@ -403,155 +406,76 @@ class PhiloProvider(BaseProvider):
             )
             return None
 
-    def _resolve_all(
-        self, session, player_id: str, channels: List[Dict[str, Any]]
-    ) -> Dict[str, str]:
-        """
-        Concurrently resolve HLS URLs for all channels.
-        Updates self._stream_cache as results come in.
-        Returns {callsign: hls_url}.
-        """
-        results: Dict[str, str] = {}
-        expiry = time.time() + self._stream_ttl
-
-        def _worker(ch):
-            cs  = ch["_callsign"]
-            cid = ch["_channel_id"]
-            url = self._resolve_one(session, player_id, cs, cid)
-            return cs, url
-
-        self.logger.info(
-            f"Philo: resolving {len(channels)} stream URLs "
-        )
-        t0 = time.time()
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self._stream_workers
-        ) as pool:
-            futures = {pool.submit(_worker, ch): ch["_callsign"] for ch in channels}
-            for fut in concurrent.futures.as_completed(futures, timeout=120):
-                try:
-                    callsign, url = fut.result(timeout=30)
-                    if url:
-                        results[callsign] = url
-                        with self._stream_lock:
-                            self._stream_cache[callsign] = {
-                                "hls_url": url,
-                                "expiry":  expiry,
-                            }
-                except Exception as exc:
-                    cs = futures.get(fut, "?")
-                    self.logger.debug(f"Philo: worker error for '{cs}': {exc}")
-
-        self.logger.info(
-            f"Found {len(results)} channels from Philo API"
-        )
-        return results
-
-    # ── Cache helpers ─────────────────────────────────────────────────────────
-
-    def _stream_cache_valid(self) -> bool:
-        """True only if every callsign in _channels_meta has a non-expired URL."""
-        if not self._stream_cache or not self._channels_meta:
-            return False
-        now = time.time()
-        with self._stream_lock:
-            for ch in self._channels_meta:
-                entry = self._stream_cache.get(ch.get("_callsign", ""))
-                if not entry or entry["expiry"] <= now:
-                    return False
-        return True
-
     # ── BaseProvider interface ────────────────────────────────────────────────
 
     def get_channels(self) -> List[Dict[str, Any]]:
         """
-        Return all Philo channels with direct HLS stream URLs embedded.
+        Return all Philo channels with /play/philo/<callsign> stream URLs.
 
         Caching:
-          Channel metadata  →  PHILO_CACHE_DURATION  (default 1 hr)
-          Per-channel URLs  →  PHILO_STREAM_TTL       (default 30 min)
-        Both refresh together on expiry.
+          Channel metadata  →  1 hr
+        Stream URLs are resolved per channel at play time (30 min cache).
         """
         try:
             now = time.time()
 
-            # Fast path — everything still cached
-            if (
-                now < self._channel_cache_expiry
-                and self._channels_meta
-                and self._stream_cache_valid()
-            ):
-                self.logger.debug("Philo: returning fully cached channels")
-                return self._build_output(self._channels_meta)
+            # Fast path — metadata still cached
+            if now < self._channel_cache_expiry and self._channels_meta:
+                self.logger.debug("Philo: returning cached channels")
+                return self._channels_meta
 
             session, player_id = self._philo_session.get()
 
-            # Refresh channel metadata if stale
-            if now >= self._channel_cache_expiry or not self._channels_meta:
-                self.logger.info("Fetching philo channels")
-                meta = self._fetch_guide(session)
-                if not meta:
-                    return self._build_output(self._channels_meta)
-                self._channels_meta        = meta
-                self._channel_cache_expiry = now + self._channel_cache_ttl
-            else:
-                self.logger.debug("Philo: reusing cached channel metadata")
+            self.logger.info("Fetching philo channels")
+            meta = self._fetch_guide(session)
+            if not meta:
+                return self._channels_meta
 
-            # Resolve fresh stream URLs for all channels
-            stream_urls = self._resolve_all(session, player_id, self._channels_meta)
+            self._channels_meta        = meta
+            self._channel_ids          = {ch["_callsign"]: ch["_channel_id"] for ch in meta}
+            self._channel_cache_expiry = now + self._channel_cache_ttl
 
-            # Fall back to still-valid cached URLs for any that failed
-            now2 = time.time()
-            with self._stream_lock:
-                for ch in self._channels_meta:
-                    cs = ch.get("_callsign", "")
-                    if cs not in stream_urls:
-                        cached = self._stream_cache.get(cs)
-                        if cached and cached["expiry"] > now2:
-                            stream_urls[cs] = cached["hls_url"]
-
-            output = self._build_output(self._channels_meta, stream_urls)
-            return output
+            self.logger.info(f"Found {len(meta)} channels from Philo API")
+            return self._channels_meta
 
         except Exception as exc:
             self.logger.error(f"Philo: {exc}".replace("Philo: Philo:", "Philo:"))
-            return self._build_output(self._channels_meta)
+            return self._channels_meta
 
-    def _build_output(
-        self,
-        meta: List[Dict[str, Any]],
-        stream_urls: Optional[Dict[str, str]] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Merge channel metadata with stream URLs.
-        If stream_urls is None, reads from self._stream_cache.
-        Channels with no URL are omitted.
-        """
-        now = time.time()
-        out: List[Dict[str, Any]] = []
-        for ch in meta:
-            cs = ch.get("_callsign", "")
-            url = None
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve the HLS URL for a callsign at play time (30 min per-channel cache)."""
+        try:
+            now = time.time()
 
-            if stream_urls is not None:
-                url = stream_urls.get(cs)
+            with self._stream_lock:
+                cached = self._stream_cache.get(channel_id)
+            if cached and cached["expiry"] > now:
+                return cached["hls_url"]
 
-            if not url:
-                with self._stream_lock:
-                    cached = self._stream_cache.get(cs)
-                if cached and cached["expiry"] > now:
-                    url = cached["hls_url"]
+            channel_id_b64 = self._channel_ids.get(channel_id)
+            if channel_id_b64 is None:
+                self.get_channels()
+                channel_id_b64 = self._channel_ids.get(channel_id)
+            if channel_id_b64 is None:
+                return None
+
+            session, player_id = self._philo_session.get()
+            url = self._resolve_one(session, player_id, channel_id, channel_id_b64)
 
             if url:
-                ch_out = dict(ch)
-                ch_out["stream_url"] = url
-                out.append(ch_out)
+                with self._stream_lock:
+                    self._stream_cache[channel_id] = {
+                        "hls_url": url,
+                        "expiry":  time.time() + self._stream_ttl,
+                    }
+            return url
 
-        return out
+        except Exception as exc:
+            self.logger.error(f"Philo: resolve failed for '{channel_id}': {exc}")
+            return None
 
     def clear_cache(self) -> None:
-        """Expire channel metadata so the next fetch re-resolves all stream URLs."""
+        """Expire channel metadata so the next fetch re-pulls the guide."""
         self._channel_cache_expiry = 0.0
         
     def get_epg_data(self) -> Dict:
