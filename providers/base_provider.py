@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import logging
 import sys
+import re
+import time
+import uuid
+import urllib.parse
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -14,6 +18,40 @@ logger = logging.getLogger(__name__)
 
 class BaseProvider(ABC):
     """Base class for all streaming service providers - optimized"""
+
+    # per-provider overrides, layered key by key over BASE_AD_MACROS (subclasses set this)
+    AD_MACROS: Dict[str, str] = {}
+
+    # default values for ad-tag macros, keys are upper-case and matched case-insensitively
+    BASE_AD_MACROS: Dict[str, str] = {
+        **dict.fromkeys(('IFA', 'DEVICE_ID', 'ADID', 'DID', 'TV_AD_ID'), '00000000-0000-0000-0000-000000000000'),
+        **dict.fromkeys(('IFA_TYPE', 'IFATYPE'), 'aaid'),
+        **dict.fromkeys(('US_PRIVACY', 'USPRIVACY', 'CCPA_VALUE'), '1---'),
+        **dict.fromkeys(('LMT', 'IS_LAT', 'DNT', 'COPPA', 'GDPR', 'TARGETOPT', 'DNS', 'TARGETAD_ALLOWED'), '0'),
+        'COUNTRY': 'US',
+        **dict.fromkeys(('VIEWSIZE', 'RESOLUTION'), '1920x1080'),
+        'WIDTH': '1920',
+        'HEIGHT': '1080',
+        'DEVICE_TYPE': 'ctv',
+        'DEVICE_LANGUAGE': 'en',
+        **dict.fromkeys(('CONTENT_LIVE', 'CONTENT_LIVESTREAM', 'LIVESTREAM'), '1'),
+        **dict.fromkeys((
+            'GDPR_CONSENT', 'CONSENT', 'GPP', 'GPP_SID',
+            'APP_NAME', 'APP_BUNDLE', 'APP_STOREURL', 'APP_STORE_URL', 'APP_DOMAIN', 'APP_CATEGORY', 'DOMAIN',
+            'APP_VERSION', 'FIRMWARE_VERSION', 'WEBOS_VERSION', 'DEVICE_MAKE', 'DEVICE_MODEL',
+            'IP', 'UA', 'URL', 'FCK', 'PCS', 'NONCE',
+            'IC', 'IU', 'IDTYPE', 'PRODQ', 'SCHAIN', 'INV_PARTNER_DOMAIN', 'CTI', 'CC', 'CG',
+            'POD_AD_SLOTS', 'POD_AD_SLOT', 'AD_POS', 'AD_POSITION', 'SKIP', 'SKIPPABLE',
+            'HOTEL_TYPE', 'HOTELTYPE',
+            'IAB_CATEGORY', 'IAB_CONTENT_CATEGORY', 'CONTENT_RATING', 'CONTENT_LANGUAGE', 'CONTENT_NETWORK',
+            'CONTENT_ID', 'CONTENT_SEASON', 'CONTENT_EPISODE', 'CONTENT_DURATION', 'GOOGLE_PAL',
+        ), ''),
+    }
+
+    # matches [KEY], %5BKEY%5D, {KEY} and %7BKEY%7D, each bracket style only pairs with itself
+    AD_MACRO_PATTERN = re.compile(
+        r'\[([A-Za-z_]+)\]|%5[Bb]([A-Za-z_]+)%5[Dd]|\{([A-Za-z_]+)\}|%7[Bb]([A-Za-z_]+)%7[Dd]'
+    )
     
     def __init__(self, name: str):
         self.name = name
@@ -92,6 +130,59 @@ class BaseProvider(ABC):
         """Resolve a playable stream URL at play time; providers using /play/ routes override this"""
         return None
 
+    def expand_ad_macros(self, url: str, channel_name: str = '') -> str:
+        """
+        Expand ad-tag macros in a stream URL
+
+        Replaces [KEY], %5BKEY%5D, {KEY} and %7BKEY%7D placeholders (case-insensitive)
+        with values from BASE_AD_MACROS, layered with the provider's AD_MACROS.
+        Unknown placeholders are left exactly as they are.
+
+        @param url: str The stream URL to expand
+        @param channel_name: str Channel name used for the channel/network name macros
+        @return str: The URL with known macros filled in, or the original URL on any problem
+        """
+
+        # nothing to do for empty or non-string input
+        if not url or not isinstance(url, str):
+            return url
+
+        # fast path, no placeholder markers at all
+        lowered = url.lower()
+        if not any(marker in lowered for marker in ('[', '{', '%5b', '%7b')):
+            return url
+
+        try:
+            # start with the defaults, then layer the provider overrides on top
+            macros = dict(self.BASE_AD_MACROS)
+            for key, value in self.AD_MACROS.items():
+                macros[str(key).upper()] = str(value)
+
+            # dynamic values are computed once per url
+            macros['SESSION_ID'] = str(uuid.uuid4())
+            macros['CACHEBUSTER'] = str(int(time.time() * 1000))
+
+            # channel name macros
+            for key in ('CHANNEL_NAME', 'NETWORK_NAME', 'VIZIO_NETWORK_NAME'):
+                macros[key] = channel_name or ''
+
+            def _replace(match: 're.Match') -> str:
+                # grab whichever group actually matched
+                key = next(group for group in match.groups() if group is not None)
+                value = macros.get(key.upper())
+
+                # unknown macro, leave it exactly as it was
+                if value is None:
+                    return match.group(0)
+
+                return urllib.parse.quote(value, safe='')
+
+            return self.AD_MACRO_PATTERN.sub(_replace, url)
+
+        except Exception as e:
+            self.logger.error(f"Error expanding ad macros: {e}")
+            return url
+
     def validate_channel(self, channel: Dict[str, Any]) -> bool:
         """Validate that a channel has required fields"""
         try:
@@ -114,6 +205,8 @@ class BaseProvider(ABC):
             normalized['id'] = str(channel.get('id', '')) if channel.get('id') is not None else ''
             normalized['name'] = str(channel.get('name', '')).strip() if channel.get('name') is not None else ''
             normalized['stream_url'] = str(channel.get('stream_url', '')).strip() if channel.get('stream_url') is not None else ''
+            # fill in any ad-tag macros in the stream url
+            normalized['stream_url'] = self.expand_ad_macros(normalized['stream_url'], normalized['name'])
             
             # Optional fields with defaults
             normalized['logo'] = str(channel.get('logo', '')).strip() if channel.get('logo') else ''
