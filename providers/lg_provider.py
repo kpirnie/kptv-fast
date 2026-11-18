@@ -12,6 +12,17 @@ from .base_provider import BaseProvider
 
 class LGProvider(BaseProvider):
     """Provider for LG channels"""
+
+    # LG identity values that play past the first ad break, layered over the base macro defaults
+    AD_MACROS = {
+        'APP_BUNDLE': 'com.lg.lgchannels',
+        'APP_NAME': 'LG Channels',
+        'APP_STOREURL': 'https://us.lgappstv.com',
+        'APP_STORE_URL': 'https://us.lgappstv.com',
+        'DEVICE_MAKE': 'LG',
+        'DEVICE_MODEL': 'webOS TV',
+        'IFA_TYPE': 'lgudid',
+    }
     
     def __init__(self):
         super().__init__("lg")

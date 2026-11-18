@@ -48,13 +48,6 @@ class VizioProvider(BaseProvider):
         self._cache_expiry: float = 0
         self._cache_duration: int = 3600
 
-    def _expand_macros(self, url: str) -> str:
-        """Decode the URL, then substitute each {MACRO} with a URL-encoded value."""
-        decoded = urllib.parse.unquote(url)
-        for key, value in self.AD_MACROS.items():
-            decoded = decoded.replace('{' + key + '}', urllib.parse.quote(value, safe=''))
-        return decoded
-
     def _get_channels_from_api(self) -> List[Dict[str, Any]]:
         try:
             r = self.make_request('GET', self.CHANNELS_URL, headers=self.headers)
@@ -79,7 +72,7 @@ class VizioProvider(BaseProvider):
             if not urls or not isinstance(urls[0], str):
                 continue
 
-            stream_url = self._expand_macros(urls[0])
+            stream_url = urls[0]
             if not stream_url.startswith('http'):
                 continue
 
