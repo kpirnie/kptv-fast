@@ -4,7 +4,6 @@ Uses the public WatchFree+ guide API (no auth, clear HLS)
 """
 
 import time
-import urllib.parse
 from typing import List, Dict, Any
 from .base_provider import BaseProvider
 
