@@ -30,6 +30,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 - **Regex Filtering** — Include/exclude channels or groups by regex pattern
 - **Country Filtering** — Filter Git IPTV and LG providers by country code, name, or 3-letter ISO code
 - **Multiple Output Formats** — M3U playlist, XMLTV EPG (plain + gzip), and JSON
+- **Xtream Codes Output** — Optional XC API (live, EPG, VOD and series) for XC clients like TiviMate, turned on from the `/settings` page
 - **Debug Mode** — Verbose per-provider logging with function-level timing
 - **Health Monitoring** — Built-in `/status` endpoint compatible with Docker health checks
 - **Non-root Container** — Runs as `appuser` (UID 1000) out of the box
@@ -88,6 +89,8 @@ services:
       - LG_COUNTRY=us,ca,uk
       - WHALE_COUNTRY=us
       - DEBUG=false
+    volumes:
+      - kptv_fast_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
@@ -95,7 +98,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  kptv_fast_data:
 ```
+
+The `/app/data` volume keeps the settings made on the `/settings` page (XC output) across container restarts.
 
 ```bash
 docker compose up -d
@@ -124,6 +132,7 @@ DEBUG=true GIT_COUNTRY=us,ca LG_COUNTRY=us,ca python app.py
 | `GET /debug` | Debug JSON with provider stats, cache status, and runtime info |
 | `GET /refresh` | Force-clear cache and re-fetch all channels |
 | `GET /clear_cache` | Clear channels + EPG cache without re-fetching |
+| `GET /settings` | Settings page — turn XC output on/off and set its username and password |
 
 Add `?refresh=1` to `/` or `/status` to force a live channel count instead of reading the cache.
 
@@ -136,6 +145,39 @@ Add `?refresh=1` to `/` or `/status` to force a live channel count instead of re
 | Jellyfin | `http://your-host:8080/playlist` | `http://your-host:8080/epg` |
 | Kodi (PVR IPTV Simple) | `http://your-host:8080/playlist` | `http://your-host:8080/epg` |
 | VLC | `vlc http://your-host:8080/playlist` | — |
+
+---
+
+## Xtream Codes (XC) Output
+
+XC output is off by default. Open `http://your-host:8080/settings`, tick **Enable XC output**, set a username and password, and save. Settings are written to `/app/data/settings.json`, so mount `/app/data` as a volume to keep them. Turning XC output off (or leaving the username or password empty) makes every XC endpoint return `404`.
+
+In an XC client, use `http://your-host:8080` as the server URL with the username and password from the settings page.
+
+| Endpoint | Description |
+|---|---|
+| `GET/POST /player_api.php` | XC API: account info, and the `get_live_categories`, `get_live_streams`, `get_short_epg`, `get_simple_data_table`, `get_vod_categories`, `get_vod_streams`, `get_vod_info`, `get_series_categories`, `get_series` and `get_series_info` actions |
+| `GET /get.php?username=…&password=…&type=m3u_plus` | M3U playlist of the live channels with XC-style stream URLs (add `&output=ts` for `.ts` URLs) |
+| `GET /xmltv.php?username=…&password=…` | Combined XMLTV EPG |
+| `GET /live/<username>/<password>/<stream_id>.<ext>` | Live stream — redirects to the channel's stream |
+| `GET /movie/<username>/<password>/<stream_id>.<ext>` | Movie — redirects to the title's stream |
+| `GET /series/<username>/<password>/<stream_id>.<ext>` | Series episode — redirects to the episode's stream |
+
+**How it maps:**
+
+- Categories are `<provider> - <group>` (e.g. `pluto - News`); for channels in several groups the first one is used
+- Stream, series and category IDs are stable hashes, so they survive refreshes and restarts
+- Streams are redirected (`302`), never proxied, so there is no connection limit to enforce
+- EPG listings are built from the same combined guide as `/epg`
+
+**VOD and series** come from providers with an on-demand library:
+
+| Provider | Movies | Series |
+|---|---|---|
+| Pluto TV | ✓ | ✓ |
+| Tubi | ✓ | ✓ |
+
+The VOD library is only fetched while XC output is on. It is built in the background (startup, then every `VOD_CACHE_DURATION`), so right after turning XC on the VOD lists stay empty until the first build finishes. Series episodes are fetched when a series is opened and cached for the same duration. VOD stream URLs are resolved when played, so they always use a fresh session.
 
 ---
 
@@ -160,6 +202,8 @@ All configuration is done via environment variables.
 | `WARM_CACHE_ON_STARTUP` | `true` | Pre-load channel cache on boot |
 | `WARM_EPG_ON_STARTUP` | `true` | Pre-load EPG cache on boot |
 | `STARTUP_CACHE_DELAY` | `10` | Seconds to wait before beginning cache warm |
+| `VOD_CACHE_DURATION` | `86400` | VOD library and series episode cache TTL in seconds (XC output) |
+| `VOD_TIMEOUT` | `300` | Per-provider timeout in seconds for a VOD library or series fetch |
 
 ### Content Filtering
 
@@ -352,6 +396,7 @@ The Dockerfile uses a two-stage Alpine build. The builder stage compiles Python 
 1. Create `providers/your_provider.py` inheriting from `BaseProvider`
 2. Implement `get_channels() -> List[Dict]` and `get_epg_data() -> Dict`
 3. Return channel dicts with at minimum `id`, `name`, `stream_url`; optionally `logo`, `group`, `number`, `description`, `language`
+   - Optional VOD: override `get_vod()` and `get_series_episodes()`; return `/play/<provider>/<id>` stream URLs and resolve them in `resolve_stream()`
 4. Register the class in `core/provider_loader.py` inside `load_providers()` (add a `(key, module_path, ClassName)` entry to `_single`)
 5. Add the key to `ENABLED_PROVIDERS` docs and the provider table above
 6. Test with `DEBUG=true python app.py`
@@ -361,7 +406,8 @@ The Dockerfile uses a two-stage Alpine build. The builder stage compiles Python 
 ## Security
 
 - Container runs as non-root `appuser` (UID 1000) — no `--privileged` needed
-- No credentials are stored on disk; all secrets are passed via environment variables
+- Provider secrets are passed via environment variables; the only thing written to disk is `/app/data/settings.json` (XC output settings, including its password, file mode `600`)
+- The `/settings` page has no login of its own — anyone who can reach the server can change the XC credentials, so put it behind a reverse proxy or restrict access if the server is public
 - Recommend placing behind a reverse proxy (nginx, Traefik, Caddy) for external access
 
 ```yaml
