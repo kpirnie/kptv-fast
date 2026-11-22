@@ -69,6 +69,9 @@ COPY --chown=appuser:appuser utils/ ./utils/
 COPY --chown=appuser:appuser core/   ./core/
 COPY --chown=appuser:appuser routes/ ./routes/
 
+# Persistent settings directory
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
 # Switch to non-root user
 USER appuser
 

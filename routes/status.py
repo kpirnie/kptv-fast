@@ -324,6 +324,7 @@ _STATUS_TEMPLATE = """\
         <a href="/refresh">Force Refresh</a>
         <a href="/clear_cache">Clear Cache</a>
         <a href="/?refresh=1">Status (live)</a>
+        <a href="/settings">Settings</a>
       </div>
     </section>
 

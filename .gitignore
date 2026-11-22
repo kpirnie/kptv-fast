@@ -2,3 +2,4 @@ docker-compose.yaml
 docker-compose.yml
 nettest.sh
 test/
+data/

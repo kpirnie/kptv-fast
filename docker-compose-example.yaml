@@ -53,6 +53,10 @@ services:
 
       # Debug logging
       - DEBUG=false
+
+    # persistent settings (XC output, etc.)
+    volumes:
+      - kptv_fast_data:/app/data
       
     # keep it running unless the container is stopped
     restart: unless-stopped
@@ -64,3 +68,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+volumes:
+  kptv_fast_data:
