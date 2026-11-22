@@ -24,7 +24,10 @@ class SamsungProvider(BaseProvider):
         self.region = os.getenv('SAMSUNG_REGION', 'us')
         
         self.app_url = 'https://i.mjh.nz/SamsungTVPlus/.channels.json.gz'
-        self.playback_url_template = 'https://jmp2.uk/sam-{id}.m3u8'
+        self.playback_url_base = 'https://jmp2.uk/'
+
+        # path template from the feed's slug, e.g. 'stvp-{id}'
+        self.slug = 'stvp-{id}'
         
         self.headers = {
             'User-Agent': self.get_user_agent(),
@@ -41,6 +44,10 @@ class SamsungProvider(BaseProvider):
             # Decompress and parse JSON
             json_text = gzip.GzipFile(fileobj=BytesIO(response.content)).read()
             data = json.loads(json_text)
+
+            # the feed says how jmp2.uk paths are built for its ids
+            if data.get('slug'):
+                self.slug = data['slug']
             
             return data.get('regions', {})
             
@@ -90,7 +97,7 @@ class SamsungProvider(BaseProvider):
                             continue
                         
                         # Build stream URL
-                        stream_url = self.playback_url_template.format(id=channel_id)
+                        stream_url = self.playback_url_base + self.slug.replace('{id}', channel_id)
                         
                         channel = {
                             'id': f"samsung-{channel_id}",
