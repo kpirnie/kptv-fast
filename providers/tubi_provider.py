@@ -113,17 +113,23 @@ class TubiProvider(BaseProvider):
                 
             skip_slugs = ['favorite_linear_channels', 'recommended_linear_channels', 'featured_channels', 'recently_added_channels']
             
+            # older pages key the container lists by region, newer ones send the container list itself
+            if isinstance(contentIdsByContainer, dict):
+                containers = [item for rows in contentIdsByContainer.values() for item in (rows or [])]
+                group_listing = contentIdsByContainer.get("tubitv_us_linear", [])
+            else:
+                containers = contentIdsByContainer
+                group_listing = contentIdsByContainer
+
             channel_list = []
-            for key in contentIdsByContainer.keys():
-                for item in contentIdsByContainer[key]:
-                    if item['container_slug'] not in skip_slugs:
-                        channel_list.extend(item["contents"])
-            
+            for item in containers:
+                if item['container_slug'] not in skip_slugs:
+                    channel_list.extend(item["contents"])
+
             channel_list = list(set(channel_list))
             self.logger.info(f'Number of streams available: {len(channel_list)}')
-            
+
             # Extract group information
-            group_listing = contentIdsByContainer.get("tubitv_us_linear", [])
             groups = {}
             for elem in group_listing:
                 if elem["container_slug"] not in skip_slugs:
