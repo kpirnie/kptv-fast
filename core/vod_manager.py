@@ -11,7 +11,6 @@ import logging
 import gevent  # type: ignore
 
 from providers.base_provider import BaseProvider
-from utils.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +18,8 @@ logger = logging.getLogger(__name__)
 class VodManager:
     """
     Owns the VOD library cache. Only providers that override ``get_vod`` are
-    fetched, and only while XC output is on. Requests never block on a build:
-    a missing or expired library kicks a background build and serves what's cached.
+    fetched. The library is built in the background when the container starts
+    and refreshed at 75% TTL; requests only ever read what's cached.
     """
 
     def __init__(self, providers: dict, debug_mode: bool = False):
@@ -40,7 +39,6 @@ class VodManager:
         self._build_lock    = threading.Lock()
         self._library       = None
         self._expiry        = 0
-        self._refreshing    = False
 
         # (provider, series_id) -> (expiry, seasons)
         self._episodes: dict = {}
@@ -51,13 +49,9 @@ class VodManager:
     # ── Public interface ──────────────────────────────────────────────────────
 
     def get_library(self) -> dict:
-        """Return the cached library; a missing or expired one is rebuilt in the background."""
+        """Return the cached library; empty until the startup build finishes."""
         with self._lock:
             library = self._library
-            valid   = library is not None and time.time() < self._expiry
-
-        if not valid:
-            self.refresh_in_background()
 
         return library or {'movies': [], 'series': []}
 
@@ -102,27 +96,6 @@ class VodManager:
             self._expiry  = 0
         with self._episode_lock:
             self._episodes.clear()
-
-    def refresh_in_background(self) -> None:
-        """Start a single background build; does nothing if one is already running."""
-        if not self.providers:
-            return
-
-        with self._lock:
-            if self._refreshing:
-                return
-            self._refreshing = True
-
-        def _worker():
-            try:
-                self._build()
-            except Exception as exc:
-                logger.error(f"VOD refresh error: {exc}")
-            finally:
-                with self._lock:
-                    self._refreshing = False
-
-        threading.Thread(target=_worker, daemon=True, name='vod-refresh').start()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -191,7 +164,7 @@ class VodManager:
             logger.info(f"VOD library: {len(movies)} movies, {len(series)} series in {time.time() - start:.1f}s")
 
     def _start_background_refresh(self) -> None:
-        """Daemon thread that builds the library while XC output is on and pre-refreshes it at 75% TTL."""
+        """Daemon thread that builds the library on startup and pre-refreshes it at 75% TTL."""
         if not self.providers:
             return
 
@@ -203,14 +176,15 @@ class VodManager:
 
             while True:
                 try:
-                    if get_settings().xc_active():
-                        with self._lock:
-                            built = self._library is not None
-                            age   = time.time() - (self._expiry - self.cache_duration) if built else 0
-                            stale = not built or age > (self.cache_duration * 0.75)
+                    with self._lock:
+                        library = self._library
+                        built   = library is not None
+                        age     = time.time() - (self._expiry - self.cache_duration) if built else 0
 
-                        if stale:
-                            self._build()
+                    # an empty library (every provider failed) is retried on the next pass
+                    empty = not built or not (library['movies'] or library['series'])
+                    if empty or age > (self.cache_duration * 0.75):
+                        self._build()
 
                 except Exception as exc:
                     logger.error(f"VOD background refresh error: {exc}")

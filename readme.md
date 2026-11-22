@@ -177,7 +177,7 @@ In an XC client, use `http://your-host:8080` as the server URL with the username
 | Pluto TV | ✓ | ✓ |
 | Tubi | ✓ | ✓ |
 
-The VOD library is only fetched while XC output is on. It is built in the background (startup, then every `VOD_CACHE_DURATION`), so right after turning XC on the VOD lists stay empty until the first build finishes. Series episodes are fetched when a series is opened and cached for the same duration. VOD stream URLs are resolved when played, so they always use a fresh session.
+The VOD library is built in the background when the container starts (after `STARTUP_CACHE_DELAY`) and refreshed at 75% of `VOD_CACHE_DURATION`; until that first build finishes the VOD lists are empty. If every provider comes back empty, the build is retried every 5 minutes. Series episodes are fetched when a series is opened and cached for the same duration. VOD stream URLs are resolved when played, so they always use a fresh session.
 
 ---
 
