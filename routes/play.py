@@ -31,6 +31,7 @@ def create_blueprint(channel_manager) -> Blueprint:
             url = None
 
         if not url:
+            logger.warning(f"Unable to resolve stream for {provider}/{channel_id}")
             return Response(f"Unable to resolve stream for {provider}/{channel_id}", status=502, mimetype='text/plain')
 
         # look up the channel name from the cache, never trigger a refresh

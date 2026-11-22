@@ -9,6 +9,7 @@ import os
 import uuid
 import time
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 from typing import List, Dict, Any, Optional
 from .base_provider import BaseProvider
 
@@ -278,7 +279,8 @@ class XumoProvider(BaseProvider):
                 if 'sources' in provider:
                     for source in provider['sources']:
                         uri = source.get('uri')
-                        if uri and (source.get('type') == 'application/x-mpegURL' or uri.endswith('.m3u8')):
+                        # sources may have no type and carry a query string, so check the path
+                        if uri and (source.get('type') == 'application/x-mpegURL' or urlparse(uri).path.endswith('.m3u8')):
                             processed_uri = self._process_stream_uri(uri)
                             self.stream_cache[channel_id] = {
                                 'url': processed_uri,

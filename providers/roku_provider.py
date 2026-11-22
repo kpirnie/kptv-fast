@@ -1,27 +1,21 @@
 """
 Roku Provider Implementation
-Uses The Roku Channel API with apsattv.com M3U fallback
-API stream URLs are resolved at play time via /play/roku/<id>
+Channel list from i.mjh.nz with apsattv.com M3U fallback
+Streams play through the jmp2.uk redirector (jmp2.uk/rok-<id>.m3u8)
 """
 
 import re
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from .base_provider import BaseProvider
 
 
 class RokuProvider(BaseProvider):
-    """Provider for The Roku Channel - API first, apsattv fallback"""
+    """Provider for The Roku Channel - i.mjh.nz list first, apsattv fallback"""
 
     CHANNELS_JSON_URL = "https://i.mjh.nz/Roku/.channels.json"
     FALLBACK_M3U_URL  = "https://www.apsattv.com/rok.m3u"
-
-    CSRF_URL      = "https://therokuchannel.roku.com/api/v1/csrf"
-    CONTENT_URL   = ("https://therokuchannel.roku.com/api/v2/homescreen/content/"
-                     "https%3A%2F%2Fcontent.sr.roku.com%2Fcontent%2Fv1%2Froku-trc%2F"
-                     "{channel_id}%3Fexpand%3DviewOptions.channelId%252CviewOptions.playId"
-                     "%252Cnext.viewOptions.channelId%252Cnext.viewOptions.playId")
-    PLAYBACK_URL  = "https://therokuchannel.roku.com/api/v3/playback"
+    PLAYBACK_URL      = "https://jmp2.uk/rok-{channel_id}.m3u8"
 
     def __init__(self):
         super().__init__("roku")
@@ -42,80 +36,8 @@ class RokuProvider(BaseProvider):
         self._cache_expiry: float = 0
         self._cache_duration: int = 3600
 
-        # channel ids served via /play/ (empty while the apsattv fallback is in use)
-        self._api_ids: set = set()
-
-        # Shared CSRF session + per-channel resolved URL cache: {id: {"url": str, "expiry": float}}
-        self._roku_session = None
-        self._stream_ttl: int = 1800
-        self._stream_cache: Dict[str, Dict[str, Any]] = {}
-
-    # ── Roku API helpers ──────────────────────────────────────────────────────
-
-    def _make_roku_session(self):
-        """Create a requests Session pre-loaded with CSRF token and cookies."""
-        import requests
-        session = requests.Session()
-        session.headers.update(self._base_headers)
-        try:
-            r = session.get(self.CSRF_URL, timeout=10)
-            r.raise_for_status()
-            csrf = r.json().get("csrf")
-            if csrf:
-                session.headers.update({"csrf-token": csrf})
-        except Exception as e:
-            self.logger.warning(f"Roku: could not fetch CSRF token: {e}")
-        return session
-
-    def _resolve_stream(self, session, channel_id: str) -> Optional[str]:
-        """Resolve a single Roku channel stream URL via the API."""
-        try:
-            content_url = self.CONTENT_URL.format(channel_id=channel_id)
-            cr = session.get(content_url, timeout=15)
-            cr.raise_for_status()
-            view_opts = cr.json().get("viewOptions", [])
-            if not view_opts:
-                return None
-            play_id = view_opts[0].get("playId")
-            if not play_id:
-                return None
-
-            payload = {
-                "rokuId":      channel_id,
-                "playId":      play_id,
-                "mediaFormat": "m3u",
-                "drmType":     "widevine",
-                "quality":     "fhd",
-                "bifUrl":      None,
-                "adPolicyId":  "",
-                "providerId":  "rokuavod",
-            }
-            pb_headers = {"content-type": "application/json"}
-            pr = session.post(self.PLAYBACK_URL, json=payload,
-                              headers=pb_headers, timeout=15)
-            if pr.status_code == 403:
-                return None
-            pr.raise_for_status()
-            url = pr.json().get("url", "")
-            if not url:
-                return None
-
-            # Transform URL
-            if "https://osm.sr.roku.com/osm/v1/hls/master/" in url:
-                url = url.replace(
-                    "https://osm.sr.roku.com/osm/v1/hls/master/",
-                    "https://aka-live1050.delivery.roku.com/"
-                ).replace("/live.m3u8", "/t2-origin/out/v1/live.m3u8")
-                url = url.split("?")[0]
-
-            return url if url else None
-
-        except Exception as e:
-            self.logger.debug(f"Roku: stream resolve failed for {channel_id}: {e}")
-            return None
-
     def _get_channels_from_api(self) -> List[Dict[str, Any]]:
-        """Fetch channel list from i.mjh.nz; streams resolve at play time."""
+        """Fetch channel list from i.mjh.nz; streams play through jmp2.uk."""
         try:
             r = self.make_request("GET", self.CHANNELS_JSON_URL,
                                   headers=self._base_headers)
@@ -131,7 +53,6 @@ class RokuProvider(BaseProvider):
             return []
 
         channels: List[Dict[str, Any]] = []
-        api_ids: set = set()
 
         for channel_id, ch in channels_data.items():
             groups = ch.get("groups", [])
@@ -141,7 +62,7 @@ class RokuProvider(BaseProvider):
             channel = {
                 "id":          f"roku-{channel_id}",
                 "name":        name,
-                "stream_url":  f"/play/roku/{channel_id}",
+                "stream_url":  self.PLAYBACK_URL.format(channel_id=channel_id),
                 "logo":        ch.get("logo", ""),
                 "group":       group,
                 "number":      ch.get("chno"),
@@ -150,9 +71,6 @@ class RokuProvider(BaseProvider):
             }
             if self.validate_channel(channel):
                 channels.append(self.normalize_channel(channel))
-                api_ids.add(channel_id)
-
-        self._api_ids = api_ids
 
         self.logger.info(f"Roku: {len(channels)} channels from API")
         return channels
@@ -243,7 +161,6 @@ class RokuProvider(BaseProvider):
 
         if len(channels) < 10:
             self.logger.info("Roku: API returned too few channels, using fallback")
-            self._api_ids = set()
             channels = self._get_channels_from_fallback()
 
         if channels:
@@ -251,35 +168,6 @@ class RokuProvider(BaseProvider):
             self._cache_expiry   = time.time() + self._cache_duration
 
         return channels
-
-    def resolve_stream(self, channel_id: str) -> Optional[str]:
-        """Resolve a Roku channel's stream URL at play time (30 min per-channel cache)."""
-        cached = self._stream_cache.get(channel_id)
-        if cached and cached["expiry"] > time.time():
-            return cached["url"]
-
-        if channel_id not in self._api_ids:
-            self.get_channels()
-            if channel_id not in self._api_ids:
-                return None
-
-        fresh = self._roku_session is None
-        if fresh:
-            self._roku_session = self._make_roku_session()
-
-        url = self._resolve_stream(self._roku_session, channel_id)
-
-        # a reused session may have gone stale — rebuild it and retry once
-        if not url and not fresh:
-            self._roku_session = self._make_roku_session()
-            url = self._resolve_stream(self._roku_session, channel_id)
-
-        if url:
-            self._stream_cache[channel_id] = {
-                "url":    url,
-                "expiry": time.time() + self._stream_ttl,
-            }
-        return url
 
     def clear_cache(self) -> None:
         self._cache_expiry = 0
