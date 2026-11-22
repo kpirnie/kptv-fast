@@ -21,7 +21,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 
 ## Features
 
-- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Whale TV+, Git IPTV (iptv-org), Git Free TV (Free-TV)
+- **20+ Streaming Providers** — Pluto, Plex, Samsung, Tubi, Xumo, LG, Stirr, Philo, Vizio, Roku, LocalNow, TCL, TCL Plus, Fire TV, Xiaomi, Tablo, Whale TV+, Rakuten TV, Git IPTV (iptv-org), Git Free TV (Free-TV)
 - **Unified EPG** — Aggregates external XMLTV sources into a single endpoint; no provider-specific configuration needed
 - **Concurrent Fetching** — All providers are queried in parallel via `ThreadPoolExecutor`
 - **Smart Caching** — 2-hour default cache with background pre-refresh at 75% TTL
@@ -57,6 +57,7 @@ KPTV FAST Streams pulls live TV channels from 20+ free streaming services and pr
 | Fire TV | `firetv` | ~50+ | None | None |
 | Xiaomi TV+ | `xiaomi` | ~200+ | None | None |
 | Tablo | `tablo` | ~100+ | None | None |
+| Rakuten TV (UK) | `rakuten` | ~190 | None | BuddyChewChew repo |
 | Whale TV+ | `whale` | ~100+ | None (API token) | None |
 | Git IPTV (iptv-org) | `git_iptv` | ~500–2000+ | None | None |
 | Git Free TV (Free-TV) | `git_freetv` | ~100–500+ | None | None |
@@ -295,6 +296,7 @@ The EPG aggregator downloads and combines multiple external XMLTV sources into a
 | [BuddyChewChew/tubi-scraper](https://github.com/BuddyChewChew/tubi-scraper) | Tubi |
 | [BuddyChewChew/xumo-playlist-generator](https://github.com/BuddyChewChew/xumo-playlist-generator) | Xumo |
 | [BuddyChewChew/localnow-playlist-generator](https://github.com/BuddyChewChew/localnow-playlist-generator) | LocalNow |
+| [BuddyChewChew/RakutenTV](https://github.com/BuddyChewChew/RakutenTV) | Rakuten TV |
 
 Providers not listed (Stirr, Vizio, Roku, TCL, Tablo, Xiaomi, Fire TV, Whale TV+, Git IPTV, Git Free TV) do not have EPG data available through the aggregator.
 
