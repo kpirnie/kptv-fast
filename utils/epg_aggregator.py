@@ -48,6 +48,7 @@ class EPGAggregator:
             'xumo':     'https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz',
             'roku':     'https://github.com/matthuisman/i.mjh.nz/raw/master/Roku/all.xml',
             'localnow': 'https://raw.githubusercontent.com/BuddyChewChew/localnow-playlist-generator/refs/heads/main/epg.xml',
+            'rakuten':  'https://raw.githubusercontent.com/BuddyChewChew/RakutenTV/main/epg.xml',
         }
 
         self.fetch_workers = len(self.epg_sources)  # concurrent source downloads

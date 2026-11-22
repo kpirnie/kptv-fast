@@ -32,6 +32,7 @@ def load_providers(enabled_providers: list) -> dict:
         ('vizio',     'providers.vizio_provider',    'VizioProvider'),
         ('tclplus',   'providers.tclplus_provider',  'TCLPlusProvider'),
         ('localnow',  'providers.localnow_provider', 'LocalNowProvider'),
+        ('rakuten',   'providers.rakuten_provider',  'RakutenProvider'),
     ]
 
     for key, module_path, class_name in _single:

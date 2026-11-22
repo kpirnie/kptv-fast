@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _EPG_PROVIDERS = {
     'plex', 'pluto', 'samsung', 'lg',
     'tubi', 'xumo', 'roku', 'localnow',
+    'rakuten',
 }
 
 # SVG icons
