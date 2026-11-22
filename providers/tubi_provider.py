@@ -3,15 +3,21 @@ Tubi Provider Implementation - Based on Working tubi-for-channels repo
 """
 
 import json
+import html
 import concurrent.futures
 import uuid
 import time
 import os
 import re
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from urllib.parse import unquote
 from .base_provider import BaseProvider
+
+# the public sitemap lists every movie and series, paged
+_SITEMAP_FIRST   = "https://tubitv.com/sitemaps/sitemap/{kind}/"
+_SITEMAP_PAGE    = "https://tubitv.com/sitemaps/sitemap/{kind}/page/{page}/"
+_SITEMAP_WORKERS = 8
 
 class TubiProvider(BaseProvider):
     """Provider for Tubi TV channels"""
@@ -275,3 +281,182 @@ class TubiProvider(BaseProvider):
     def get_epg_data(self):
         """EPG handled by aggregator"""
         return {}
+
+    # ── VOD ───────────────────────────────────────────────────────────────────
+
+    def _get_page(self, url: str) -> str:
+        """GET a tubitv.com page as text; empty on any failure"""
+        try:
+            response = self.session.get(url, headers=self.headers, timeout=self.get_timeout())
+            if response.status_code != 200:
+                self.logger.debug(f"Tubi page {url} returned {response.status_code}")
+                return ''
+            return response.text
+        except Exception as e:
+            self.logger.debug(f"Tubi page {url} failed: {e}")
+            return ''
+
+    def _page_json(self, html_content: str, var_name: str):
+        """Pull the window.<var_name> object out of a page, cleaned up into JSON; None when missing"""
+        if not html_content:
+            return None
+
+        match = re.search(r'window\.' + re.escape(var_name) + r'\s*=\s*', html_content)
+        if not match:
+            return None
+
+        # bound it by the closing script tag
+        start = match.end()
+        end = html_content.find("</script>", start)
+        if end == -1:
+            end = len(html_content)
+        json_string = html_content[start:end]
+
+        # same clean-up as the live page: undefined -> null, Date() calls -> strings
+        json_string = re.sub(r'\bundefined\b', 'null', json_string)
+        json_string = re.sub(r'(new\s+Date\("[^"]*"\)|read\s+Date\("[^"]*"\))', self.replace_quotes, json_string)
+
+        # raw_decode stops at the end of the object, so anything after it in the script is ignored
+        try:
+            data, _ = json.JSONDecoder().raw_decode(json_string)
+            return data
+        except Exception as e:
+            self.logger.debug(f"Tubi {var_name} parse error: {type(e).__name__}")
+            return None
+
+    def _sitemap_links(self, kind: str) -> Dict[str, str]:
+        """Return id -> title for every title across one of the sitemaps (movies or series)"""
+        link_re = re.compile(r'<a[^>]+href="/' + kind + r'/(\d+)/[^"]*"[^>]*>(.*?)</a>', re.DOTALL)
+
+        first = self._get_page(_SITEMAP_FIRST.format(kind=kind))
+        if not first:
+            self.logger.warning(f"Tubi {kind} sitemap unavailable")
+            return {}
+
+        # the pager links to the last page
+        pages = [int(p) for p in re.findall(r'/sitemaps/sitemap/' + kind + r'/page/(\d+)/', first)]
+        last = max(pages) if pages else 1
+
+        found: Dict[str, str] = {}
+
+        def _collect(text: str) -> None:
+            for item_id, title in link_re.findall(text or ''):
+                title = html.unescape(re.sub(r'<[^>]+>', '', title)).strip()
+                if title:
+                    found.setdefault(item_id, title)
+
+        _collect(first)
+
+        urls = [_SITEMAP_PAGE.format(kind=kind, page=page) for page in range(2, last + 1)]
+        if urls:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=_SITEMAP_WORKERS) as executor:
+                # map keeps page order so the result is deterministic
+                for text in executor.map(self._get_page, urls):
+                    _collect(text)
+
+        self.logger.info(f"Tubi {kind} sitemap: {len(found)} titles across {last} pages")
+        return found
+
+    def get_vod(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return Tubi's on-demand movies and series from the public sitemap"""
+        movies = [
+            {
+                'id':         item_id,
+                'name':       title,
+                'group':      'Movies',
+                'stream_url': f"/play/tubi/vod:movies:{item_id}",
+            }
+            for item_id, title in self._sitemap_links('movies').items()
+        ]
+
+        series = [
+            {
+                'id':    item_id,
+                'name':  title,
+                'group': 'Series',
+            }
+            for item_id, title in self._sitemap_links('series').items()
+        ]
+
+        self.logger.info(f"Tubi VOD: {len(movies)} movies, {len(series)} series")
+        return {'movies': movies, 'series': series}
+
+    def get_series_episodes(self, series_id: str) -> Dict[int, List[Dict[str, Any]]]:
+        """Return a Tubi series' episodes by season, read from the series page"""
+        if not series_id or not series_id.isdigit():
+            return {}
+
+        state = self._page_json(self._get_page(f"https://tubitv.com/series/{series_id}/"), '__REACT_QUERY_STATE__')
+        if not isinstance(state, dict):
+            self.logger.warning(f"Tubi series {series_id}: no query state on the page")
+            return {}
+
+        # the query holding the season list
+        seasons_data = []
+        for query in state.get('queries') or []:
+            data = ((query or {}).get('state') or {}).get('data')
+            if isinstance(data, dict) and isinstance(data.get('seasons'), list) and data['seasons']:
+                seasons_data = data['seasons']
+                break
+
+        seasons: Dict[int, List[Dict[str, Any]]] = {}
+        for season in seasons_data:
+            try:
+                season_num = int(season.get('number'))
+            except (TypeError, ValueError):
+                continue
+
+            episodes = []
+            for position, ep in enumerate(season.get('episodes') or [], 1):
+                ep_id = str((ep or {}).get('id') or '')
+                if not ep_id.isdigit():
+                    continue
+
+                try:
+                    ep_num = int(ep.get('num') or position)
+                except (TypeError, ValueError):
+                    ep_num = position
+
+                try:
+                    duration = int(ep.get('duration') or 0)
+                except (TypeError, ValueError):
+                    duration = 0
+
+                episodes.append({
+                    'id':            ep_id,
+                    'title':         str(ep.get('title') or '').strip(),
+                    'episode_num':   ep_num,
+                    'stream_url':    f"/play/tubi/vod:tv-shows:{ep_id}",
+                    'plot':          str(ep.get('description') or '').strip(),
+                    'duration_secs': duration,
+                })
+
+            if episodes:
+                seasons[season_num] = episodes
+
+        return seasons
+
+    def resolve_stream(self, channel_id: str) -> Optional[str]:
+        """Resolve /play/tubi/vod:<movies|tv-shows>:<id> to the title's unencrypted HLS manifest"""
+        if not channel_id.startswith('vod:'):
+            return None
+
+        kind, _, item_id = channel_id[4:].partition(':')
+        if kind not in ('movies', 'tv-shows') or not item_id.isdigit():
+            return None
+
+        data = self._page_json(self._get_page(f"https://tubitv.com/{kind}/{item_id}/"), '__data')
+        video = ((((data or {}).get('video') or {}).get('byId') or {}).get(item_id)) or {}
+
+        # hlsv3 first, then any hlsv6 that has no license server (no DRM)
+        for wanted in ('hlsv3', 'hlsv6'):
+            for resource in video.get('video_resources') or []:
+                if resource.get('type') != wanted or resource.get('license_server'):
+                    continue
+
+                url = str((resource.get('manifest') or {}).get('url') or '').strip()
+                if url:
+                    return f"https:{url}" if url.startswith('//') else url
+
+        self.logger.warning(f"Tubi {kind}/{item_id}: no unencrypted HLS stream found")
+        return None
