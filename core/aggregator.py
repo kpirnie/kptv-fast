@@ -14,6 +14,7 @@ from gevent.pywsgi import WSGIServer  # type: ignore
 
 from core.provider_loader import load_providers
 from core.channel_manager import ChannelManager
+from core.vod_manager     import VodManager
 from routes.playlist import create_blueprint as playlist_blueprint
 from routes.status   import create_blueprint as status_blueprint
 from routes.admin    import create_blueprint as admin_blueprint
@@ -55,6 +56,12 @@ class UnifiedStreamingAggregator:
             debug_mode = debug_mode,
         )
         self.max_workers = self.channel_manager.max_workers
+
+        # ── VOD manager ───────────────────────────────────────────────────────
+        self.vod_manager = VodManager(
+            providers  = self.providers,
+            debug_mode = debug_mode,
+        )
 
         # EPG is filtered to the channel list
         get_epg_aggregator().set_channel_manager(self.channel_manager)

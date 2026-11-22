@@ -130,6 +130,30 @@ class BaseProvider(ABC):
         """Resolve a playable stream URL at play time; providers using /play/ routes override this"""
         return None
 
+
+    def get_vod(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get the on-demand library; providers with VOD override this
+
+        Movies: id, name, stream_url, plus optional logo, group, plot, year, rating, duration_secs, added
+        Series: id, name, plus optional logo, group, plot, year, rating, added (episodes come from get_series_episodes)
+        A stream_url of /play/<provider>/<id> is resolved at play time through resolve_stream
+
+        @return dict: {'movies': [...], 'series': [...]}
+        """
+        return {'movies': [], 'series': []}
+
+    def get_series_episodes(self, series_id: str) -> Dict[int, List[Dict[str, Any]]]:
+        """
+        Get a series' episodes grouped by season number; providers with series override this
+
+        Episodes: id, title, stream_url, episode_num, plus optional plot, logo, duration_secs
+
+        @param series_id: str The provider's series id from get_vod
+        @return dict: {season_number: [episode, ...]}
+        """
+        return {}
+
     def expand_ad_macros(self, url: str, channel_name: str = '') -> str:
         """
         Expand ad-tag macros in a stream URL
