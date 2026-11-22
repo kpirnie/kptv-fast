@@ -108,7 +108,7 @@ class UnifiedStreamingAggregator:
         self.app.register_blueprint(admin_blueprint(self.channel_manager))
         self.app.register_blueprint(play_blueprint(self.channel_manager))
         self.app.register_blueprint(settings_blueprint())
-        self.app.register_blueprint(xc_blueprint(self.channel_manager))
+        self.app.register_blueprint(xc_blueprint(self.channel_manager, self.vod_manager))
 
     def run(self) -> None:
         """Start the gevent WSGI server on 0.0.0.0:8080."""
